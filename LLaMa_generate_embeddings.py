@@ -32,7 +32,7 @@ Requirements:
 """
 
 import torch
-from transformers import AutoTokenizer, OPTForCausalLM, LlamaForCausalLM, LlamaTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM, OPTForCausalLM, LlamaForCausalLM, LlamaTokenizer
 import pandas as pd
 import numpy as np
 from typing import Dict, List
@@ -46,7 +46,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     filename='embedding_extraction.log')
 
-def load_llama_model(model_name: str):
+def load_llama_model(model_name: str, torch_dtype=None, device_map=None):
     '''
     Initializes and returns a LLaMa model and tokenizer.
 
@@ -58,24 +58,60 @@ def load_llama_model(model_name: str):
     '''
     model_path = "/data/ben_levinstein/llama/models/hf_weights" #CHANGE THIS TO WHEREVER YOU STORE THE HUGGING FACE WEIGHTS
     tokenizer = LlamaTokenizer.from_pretrained(f"{model_path}/{model_name}")
-    model = LlamaForCausalLM.from_pretrained(f"{model_path}/{model_name}")
+    model = LlamaForCausalLM.from_pretrained(
+        f"{model_path}/{model_name}",
+        torch_dtype=torch_dtype,
+        device_map=device_map,
+    )
     return model, tokenizer
 
 
-def init_model(model_name: str):
+def init_model(model_name: str, model_path: str = None, torch_dtype=None, device_map=None):
     """
     Initializes and returns the model and tokenizer.
     """
     try:
-        if model_name in ['7B', '13B', '30B']:
-            model, tokenizer = load_llama_model(model_name)
+        if model_path:
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                torch_dtype=torch_dtype,
+                device_map=device_map,
+            )
+        elif model_name in ['7B', '13B', '30B']:
+            model, tokenizer = load_llama_model(model_name, torch_dtype=torch_dtype, device_map=device_map)
         else:
-            model = OPTForCausalLM.from_pretrained("facebook/opt-"+model_name)
-            tokenizer = AutoTokenizer.from_pretrained("facebook/opt-"+model_name)
+            model = OPTForCausalLM.from_pretrained(
+                "facebook/opt-" + model_name,
+                torch_dtype=torch_dtype,
+                device_map=device_map,
+            )
+            tokenizer = AutoTokenizer.from_pretrained("facebook/opt-" + model_name)
     except Exception as e:
         print(f"An error occurred when initializing the model: {str(e)}")
         return None, None
     return model, tokenizer
+
+
+def parse_torch_dtype(dtype_name: str):
+    if dtype_name is None:
+        return None
+    mapping = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float32": torch.float32,
+    }
+    if dtype_name not in mapping:
+        raise ValueError("dtype must be one of: float16, bfloat16, float32")
+    return mapping[dtype_name]
+
+
+def resolve_model_label(model_name: str, model_path: str, model_alias: str) -> str:
+    if model_alias:
+        return model_alias
+    if model_path:
+        return Path(model_path).name
+    return model_name
 
 def load_data(dataset_path: Path, dataset_name: str, true_false: bool = False):
     filename_suffix = "_true_false" if true_false else ""
@@ -103,12 +139,19 @@ def process_row(prompt: str, model, tokenizer, layers_to_use: list, remove_perio
     if remove_period:
         prompt = prompt.rstrip(". ")
     inputs = tokenizer(prompt, return_tensors="pt")
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    
+    model.eval()
     with torch.no_grad():
-        outputs = model.generate(inputs.input_ids, output_hidden_states=True, return_dict_in_generate=True, max_new_tokens=1, min_new_tokens=1)
+        outputs = model(**inputs, output_hidden_states=True, return_dict=True)
+
     embeddings = {}
     for layer in layers_to_use:
-        last_hidden_state = outputs.hidden_states[0][layer][0][-1]
-        embeddings[layer] = [last_hidden_state.numpy().tolist()]
+        # outputs.hidden_states is a tuple of (embeddings, layer_1, ..., layer_L)
+        # so outputs.hidden_states[layer] gives the correct layer output before final RMSNorm
+        last_hidden_state = outputs.hidden_states[layer][0, -1, :]
+        embeddings[layer] = [last_hidden_state.detach().cpu().numpy().tolist()]
     return embeddings
 
 #Still not convinced this function works 100% correctly, but it's much faster than process_row.
@@ -122,13 +165,15 @@ def process_batch(batch_prompts: List[str], model, tokenizer, layers_to_use: lis
     if remove_period:
         batch_prompts = [prompt.rstrip(". ") for prompt in batch_prompts]
     inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True)
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     
     model.eval()
     with torch.no_grad():
         outputs = model(**inputs, output_hidden_states=True, return_dict=True) 
 
     # Use the attention mask to find the index of the last real token for each sequence
-    seq_lengths = inputs.attention_mask.sum(dim=1) - 1  # Subtract 1 to get the index
+    seq_lengths = inputs["attention_mask"].sum(dim=1) - 1  # Subtract 1 to get the index
 
     batch_embeddings = {}
     for layer in layers_to_use:
@@ -185,6 +230,8 @@ def main():
     parser = argparse.ArgumentParser(description="Generate new csv with embeddings.")
     parser.add_argument("--model", 
                         help="Name of the language model to use: '6.7b', '2.7b', '1.3b', '350m'")
+    parser.add_argument("--model_path", help="Local path to a HF-format model (e.g., Llama-2-7b-hf).")
+    parser.add_argument("--model_alias", help="Short name used in output filenames.")
     parser.add_argument("--layers", nargs='*', 
                         help="List of layers of the LM to save embeddings from indexed negatively from the end")
     parser.add_argument("--dataset_names", nargs='*',
@@ -192,9 +239,13 @@ def main():
     parser.add_argument("--true_false", action="store_true", help="Do you want to append 'true_false' to the dataset name?")
     parser.add_argument("--batch_size", type=int, help="Batch size for processing.")
     parser.add_argument("--remove_period", action="store_true", help="Include this flag if you want to extract embedding for the last token before the final period.")
+    parser.add_argument("--dtype", help="Model dtype: float16, bfloat16, float32.")
+    parser.add_argument("--device_map", help="Device map for model loading, e.g. 'auto'.")
     args = parser.parse_args()
 
     model_name = args.model if args.model is not None else config_parameters["model"]
+    model_path = args.model_path if args.model_path is not None else config_parameters.get("model_path")
+    model_alias = args.model_alias if args.model_alias is not None else config_parameters.get("model_alias")
     should_remove_period = args.remove_period if args.remove_period is not None else config_parameters["remove_period"]
     layers_to_process = [int(x) for x in args.layers] if args.layers is not None else config_parameters["layers_to_use"]
     dataset_names = args.dataset_names if args.dataset_names is not None else config_parameters["list_of_datasets"]
@@ -202,14 +253,22 @@ def main():
     BATCH_SIZE = args.batch_size if args.batch_size is not None else config_parameters["batch_size"]
     dataset_path = Path(config_parameters["dataset_path"])
     output_path = Path(config_parameters["processed_dataset_path"])
+    torch_dtype = parse_torch_dtype(args.dtype)
+    device_map = args.device_map
+    model_label = resolve_model_label(model_name, model_path, model_alias)
 
 
     model_output_per_layer: Dict[int, pd.DataFrame] = {}
 
-    model, tokenizer = init_model(model_name)
+    model, tokenizer = init_model(model_name, model_path=model_path, torch_dtype=torch_dtype, device_map=device_map)
     if model is None or tokenizer is None:
         logging.error("Model or tokenizer initialization failed.")
         return
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if device_map is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.to(device)
     #I've left this in in case there's an issue with the batch_processing fanciness
     # for dataset_name in tqdm(dataset_names, desc="Processing datasets"):
     #     dataset = load_data(dataset_path, dataset_name, true_false=true_false)
@@ -258,7 +317,7 @@ def main():
                 logging.info(f"Processing batch {batch_num}")
 
         for layer in layers_to_process:
-            save_data(model_output_per_layer[layer], output_path, dataset_name, model_name, layer, should_remove_period)
+            save_data(model_output_per_layer[layer], output_path, dataset_name, model_label, layer, should_remove_period)
 
 
 if __name__ == "__main__":

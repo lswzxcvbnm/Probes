@@ -65,6 +65,11 @@ def load_datasets(dataset_names, layers_to_process, should_remove_period, input_
         try:
             if should_remove_period:
                 path = input_path / f"embeddings_{dataset_name}{model_name}_{abs(layers_to_process[idx])}_rmv_period.csv"
+                if not path.exists():
+                    fallback = input_path / f"embeddings_{dataset_name}{model_name}_{abs(layers_to_process[idx])}.csv"
+                    if fallback.exists():
+                        print(f"Warning: {path} not found; using {fallback} instead.")
+                        path = fallback
             else:
                 path = input_path / f"embeddings_{dataset_name}{model_name}_{abs(layers_to_process[idx])}.csv"
             datasets.append(pd.read_csv(path))
@@ -291,6 +296,25 @@ def print_results(results, dataset_names, repeat_each, layer_num_from_end):
 
     return overall_res
 
+
+def collect_metrics(results, dataset_names, repeat_each, layer_num_from_end):
+    metrics_rows = []
+    for ds in range(len(dataset_names)):
+        relevant = results[repeat_each * ds: repeat_each * (ds + 1)]
+        acc_list = [t[2] for t in relevant]
+        auc_list = [t[3] for t in relevant]
+        thr_list = [t[4] for t in relevant]
+        test_acc_list = [t[5] for t in relevant]
+        metrics_rows.append({
+            "dataset": dataset_names[ds],
+            "layer": layer_num_from_end,
+            "avg_accuracy": sum(acc_list) / len(acc_list),
+            "avg_auc": sum(auc_list) / len(auc_list),
+            "avg_threshold": sum(thr_list) / len(thr_list),
+            "avg_test_accuracy": sum(test_acc_list) / len(test_acc_list),
+        })
+    return metrics_rows
+
 def main():
     # Define the logger
     try:
@@ -319,8 +343,11 @@ def main():
                         help="List of dataset names without csv extension.")
     parser.add_argument("--remove_period", type=bool, help="True if you want to extract embedding for last token before the final period.")
     parser.add_argument("--test_first_only", type=bool, help="True if you only want to use the first dataset for testing a probe.")
+    parser.add_argument("--split_mode", choices=["leave_one_out", "first_only"],
+                        help="Dataset split: leave_one_out tests each dataset once; first_only tests only the first dataset.")
     parser.add_argument("--save_probes", type=bool, help="True if you want to save the trained probes.")
     parser.add_argument("--repeat_each", type=int, help="How many times to train a randomly initialized probe for each dataset.")
+    parser.add_argument("--metrics_path", help="Optional path to save metrics CSV.")
     args = parser.parse_args()
 
     model_name = args.model if args.model is not None else config_parameters["model"]
@@ -328,13 +355,17 @@ def main():
     layers_to_process = [int(x) for x in args.layers] if args.layers is not None else config_parameters["layers_to_use"]
     dataset_names = args.dataset_names if args.dataset_names is not None else config_parameters["list_of_datasets"]
     test_first_only = args.test_first_only if args.test_first_only is not None else config_parameters["test_first_only"]
+    if args.split_mode is not None:
+        test_first_only = args.split_mode == "first_only"
     save_probes = args.save_probes if args.save_probes is not None else config_parameters["save_probes"]
     repeat_each = args.repeat_each if args.repeat_each is not None else config_parameters["repeat_each"]
     input_path = Path(config_parameters["processed_dataset_path"])
     probes_path = Path(config_parameters["probes_dir"])
+    metrics_path = args.metrics_path
     
     
     # Iterate over the layers in "layer_num_list"
+    metrics_rows = []
     for idx in range(len(layers_to_process)):
         # Load the datasets
         datasets, dataset_paths = load_datasets(dataset_names, layers_to_process, should_remove_period, input_path, model_name, idx)
@@ -422,8 +453,17 @@ def main():
         if not test_first_only:
             avg_res = print_results(results, dataset_names, repeat_each, layers_to_process[idx])
             overall_res.extend(avg_res)
+            metrics_rows.extend(collect_metrics(results, dataset_names, repeat_each, layers_to_process[idx]))
 
         
+    if metrics_path:
+        try:
+            metrics_df = pd.DataFrame(metrics_rows)
+            metrics_df.to_csv(metrics_path, index=False)
+            logger.info("Saved metrics to %s", metrics_path)
+        except Exception as e:
+            logger.error("Error saving metrics CSV: %s", e)
+
     logger.info("Execution completed.")
     logger.info("Overall results: " + str(overall_res))
 

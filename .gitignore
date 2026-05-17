@@ -1,0 +1,4 @@
+*.log
+/probes/
+/processed_datasets/*
+!/processed_datasets/*metrics.csv
