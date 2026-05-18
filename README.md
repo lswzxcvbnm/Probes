@@ -25,6 +25,58 @@ If you want to run supervised probes directly from Llama-2 hidden states without
 Example:
 `python Run_Llama2_Supervised_Probes.py --model_path /webdav/Storage\(default\)/MyData/llms/Llama-2-7b-hf --dataset_names animals_true_false cities_true_false companies_true_false elements_true_false inventions_true_false generated_true_false facts_true_false --layers 16 20 24 28 32 --batch_size 8 --probe_epochs 5 --repeat_each 1 --device_map auto --dtype float16 --metrics_path processed_datasets/supervised_probe_metrics.csv`
 
+## Reproducing the SAPLMA Paper with LLaMA-2-7B
+
+The following steps reproduce the SAPLMA experiment using LLaMA-2-7B, matching the configuration in the original paper (Azaria & Mitchell, arXiv:2304.13734). The paper tests 5 hidden layers (32, 28, 24, 20, 16) on 6 topics, with 3 random restarts per training run and leave-one-out evaluation.
+
+**Before running**, update `model_path` in `config.json` to point to your local LLaMA-2-7B weights.
+
+### Step 1: Generate Embeddings
+
+Extract last-token hidden-state embeddings at 5 layers matching the paper:
+
+```bash
+python LLaMa_generate_embeddings.py \
+  --model_path /path/to/Llama-2-7b-hf \
+  --model_alias llama2_7b \
+  --dataset_names cities inventions elements animals companies facts \
+  --true_false \
+  --layers -1 -5 -9 -13 -17 \
+  --batch_size 8 \
+  --remove_period \
+  --dtype float16 \
+  --device_map auto
+```
+
+Layer index mapping (negative index → actual layer): `-1`=32, `-5`=28, `-9`=24, `-13`=20, `-17`=16. The off-by-one comes from `hidden_states[0]` being the embedding layer.
+
+### Step 2: Train Probes (Leave-One-Out)
+
+Train supervised probes with leave-one-out cross-topic evaluation, repeating each run 3 times:
+
+```bash
+python TrainProbes.py \
+  --model llama2_7b \
+  --dataset_names cities inventions elements animals companies facts \
+  --layers -1 -5 -9 -13 -17 \
+  --repeat_each 3 \
+  --split_mode leave_one_out \
+  --save_probes \
+  --metrics_path processed_datasets/supervised_probe_metrics.csv
+```
+
+### Step 3: Generate Predictions on a New Dataset
+
+Apply trained probes to a dataset with embeddings:
+
+```bash
+python Generate_predictions.py \
+  --model llama2_7b \
+  --dataset_name generated \
+  --layer -17 \
+  --probe_suffixes cities facts elements animals companies
+```
+
 ## Workflow for CCS (Unsupervised)
 For unsupervised probes, the code is almost entirely based on Burn's et al.'s [implementation](https://github.com/collin-burns/discovering_latent_knowledge)
 1. Again, run `GenerateEmbeddings.py` but make sure you use ones with negative and positive paired examples. Right now, those are `neg_facts_true_false.csv` and `neg_companies_true_false.csv`. 

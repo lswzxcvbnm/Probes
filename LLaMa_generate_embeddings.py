@@ -236,9 +236,9 @@ def main():
                         help="List of layers of the LM to save embeddings from indexed negatively from the end")
     parser.add_argument("--dataset_names", nargs='*',
                         help="List of dataset names without csv extension. Can leave off 'true_false' suffix if true_false flag is set to True")
-    parser.add_argument("--true_false", action="store_true", help="Do you want to append 'true_false' to the dataset name?")
+    parser.add_argument("--true_false", type=bool, help="Do you want to append 'true_false' to the dataset name?")
     parser.add_argument("--batch_size", type=int, help="Batch size for processing.")
-    parser.add_argument("--remove_period", action="store_true", help="Include this flag if you want to extract embedding for the last token before the final period.")
+    parser.add_argument("--remove_period", type=bool, help="True if you want to extract embedding for the last token before the final period.")
     parser.add_argument("--dtype", help="Model dtype: float16, bfloat16, float32.")
     parser.add_argument("--device_map", help="Device map for model loading, e.g. 'auto'.")
     args = parser.parse_args()
@@ -253,8 +253,8 @@ def main():
     BATCH_SIZE = args.batch_size if args.batch_size is not None else config_parameters["batch_size"]
     dataset_path = Path(config_parameters["dataset_path"])
     output_path = Path(config_parameters["processed_dataset_path"])
-    torch_dtype = parse_torch_dtype(args.dtype)
-    device_map = args.device_map
+    torch_dtype = parse_torch_dtype(args.dtype if args.dtype is not None else config_parameters.get("dtype"))
+    device_map = args.device_map if args.device_map is not None else config_parameters.get("device_map")
     model_label = resolve_model_label(model_name, model_path, model_alias)
 
 
