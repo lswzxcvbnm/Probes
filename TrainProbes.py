@@ -171,14 +171,15 @@ def define_model(input_dim):
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
-def train_model(model, train_embeddings, train_labels):
+def train_model(model, train_embeddings, train_labels, epochs=20):
     """
     Trains the input model on the provided embeddings and labels.
-    
+
     Parameters:
     model (keras Model): The model to be trained.
     train_embeddings (numpy.ndarray): The embeddings used for training. Each embedding should correspond to a label in 'train_labels'.
     train_labels (Series or ndarray): The labels for each training embedding.
+    epochs (int): Number of training epochs. Default 20. Paper uses 5 but that can be insufficient for weaker layers.
 
     Returns:
     model (keras Model): The trained model.
@@ -188,8 +189,8 @@ def train_model(model, train_embeddings, train_labels):
     """
     if len(train_embeddings) != len(train_labels):
         raise ValueError("Training embeddings and labels must have the same length.")
-    
-    model.fit(train_embeddings, train_labels, epochs=5, batch_size=32)
+
+    model.fit(train_embeddings, train_labels, epochs=epochs, batch_size=32, verbose=0)
     return model
 
 def evaluate_model(model, test_embeddings, test_labels):
@@ -348,6 +349,7 @@ def main():
     parser.add_argument("--save_probes", action="store_true", default=None,
                         help="Save the trained probes.")
     parser.add_argument("--repeat_each", type=int, help="How many times to train a randomly initialized probe for each dataset.")
+    parser.add_argument("--epochs", type=int, help="Number of training epochs per probe (default: 20).")
     parser.add_argument("--metrics_path", help="Optional path to save metrics CSV.")
     args = parser.parse_args()
 
@@ -360,6 +362,7 @@ def main():
         test_first_only = args.split_mode == "first_only"
     save_probes = args.save_probes if args.save_probes is not None else config_parameters["save_probes"]
     repeat_each = args.repeat_each if args.repeat_each is not None else config_parameters["repeat_each"]
+    epochs = args.epochs if args.epochs is not None else config_parameters.get("epochs", 20)
     input_path = Path(config_parameters["processed_dataset_path"])
     probes_path = Path(config_parameters["probes_dir"])
     metrics_path = args.metrics_path
@@ -396,7 +399,7 @@ def main():
                 model = define_model(train_embeddings.shape[1])
             
                 # Train the model on full training data
-                model = train_model(model, train_embeddings, train_labels)
+                model = train_model(model, train_embeddings, train_labels, epochs=epochs)
 
                 # Find the optimal threshold and compute validation set accuracy
                 optimal_threshold = find_optimal_threshold(train_embeddings, train_labels, model)
