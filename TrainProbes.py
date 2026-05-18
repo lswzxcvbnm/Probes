@@ -345,7 +345,8 @@ def main():
     parser.add_argument("--test_first_only", type=bool, help="True if you only want to use the first dataset for testing a probe.")
     parser.add_argument("--split_mode", choices=["leave_one_out", "first_only"],
                         help="Dataset split: leave_one_out tests each dataset once; first_only tests only the first dataset.")
-    parser.add_argument("--save_probes", type=bool, help="True if you want to save the trained probes.")
+    parser.add_argument("--save_probes", action="store_true", default=None,
+                        help="Save the trained probes.")
     parser.add_argument("--repeat_each", type=int, help="How many times to train a randomly initialized probe for each dataset.")
     parser.add_argument("--metrics_path", help="Optional path to save metrics CSV.")
     args = parser.parse_args()
