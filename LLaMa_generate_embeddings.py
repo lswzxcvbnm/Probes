@@ -236,9 +236,9 @@ def main():
                         help="List of layers of the LM to save embeddings from indexed negatively from the end")
     parser.add_argument("--dataset_names", nargs='*',
                         help="List of dataset names without csv extension. Can leave off 'true_false' suffix if true_false flag is set to True")
-    parser.add_argument("--true_false", type=bool, help="Do you want to append 'true_false' to the dataset name?")
+    parser.add_argument("--true_false", action="store_true", help="Append 'true_false' to the dataset name.")
     parser.add_argument("--batch_size", type=int, help="Batch size for processing.")
-    parser.add_argument("--remove_period", type=bool, help="True if you want to extract embedding for the last token before the final period.")
+    parser.add_argument("--remove_period", action="store_true", help="Extract embedding for the last token before the final period.")
     parser.add_argument("--dtype", help="Model dtype: float16, bfloat16, float32.")
     parser.add_argument("--device_map", help="Device map for model loading, e.g. 'auto'.")
     args = parser.parse_args()
@@ -246,10 +246,10 @@ def main():
     model_name = args.model if args.model is not None else config_parameters["model"]
     model_path = args.model_path if args.model_path is not None else config_parameters.get("model_path")
     model_alias = args.model_alias if args.model_alias is not None else config_parameters.get("model_alias")
-    should_remove_period = args.remove_period if args.remove_period is not None else config_parameters["remove_period"]
+    should_remove_period = args.remove_period or config_parameters.get("remove_period", False)
     layers_to_process = [int(x) for x in args.layers] if args.layers is not None else config_parameters["layers_to_use"]
     dataset_names = args.dataset_names if args.dataset_names is not None else config_parameters["list_of_datasets"]
-    true_false = args.true_false if args.true_false is not None else config_parameters["true_false"]
+    true_false = args.true_false or config_parameters.get("true_false", False)
     BATCH_SIZE = args.batch_size if args.batch_size is not None else config_parameters["batch_size"]
     dataset_path = Path(config_parameters["dataset_path"])
     output_path = Path(config_parameters["processed_dataset_path"])
