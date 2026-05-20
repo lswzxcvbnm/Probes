@@ -151,7 +151,7 @@ def process_row(prompt: str, model, tokenizer, layers_to_use: list, remove_perio
         # outputs.hidden_states is a tuple of (embeddings, layer_1, ..., layer_L)
         # so outputs.hidden_states[layer] gives the correct layer output before final RMSNorm
         last_hidden_state = outputs.hidden_states[layer][0, -1, :]
-        embeddings[layer] = [last_hidden_state.detach().cpu().numpy().tolist()]
+        embeddings[layer] = [last_hidden_state.detach().cpu().float().numpy().tolist()]
     return embeddings
 
 #Still not convinced this function works 100% correctly, but it's much faster than process_row.
@@ -181,7 +181,7 @@ def process_batch(batch_prompts: List[str], model, tokenizer, layers_to_use: lis
 
         # Gather the hidden state at the last real token for each sequence
         last_hidden_states = hidden_states[range(hidden_states.size(0)), seq_lengths, :]
-        batch_embeddings[layer] = [embedding.detach().cpu().numpy().tolist() for embedding in last_hidden_states]
+        batch_embeddings[layer] = [embedding.detach().cpu().float().numpy().tolist() for embedding in last_hidden_states]
 
     return batch_embeddings
 
