@@ -60,7 +60,7 @@ python TrainProbes.py \
   --dataset_names cities inventions elements animals companies facts \
   --layers -1 -5 -9 -13 -17 \
   --repeat_each 3 \
-  --epochs 20 \
+  --epochs 5 \
   --split_mode leave_one_out \
   --save_probes \
   --metrics_path processed_datasets/supervised_probe_metrics.csv
