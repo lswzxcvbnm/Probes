@@ -33,7 +33,9 @@ def load_config(path: str) -> dict:
         return {}
 
 
-def resolve_model_id(model_name: str) -> str:
+def resolve_model_id(model_name: str, model_path: str = None) -> str:
+    if model_path and Path(model_path).is_dir():
+        return model_path
     opt_sizes = {"350m", "1.3b", "2.7b", "6.7b"}
     if model_name in opt_sizes:
         return f"facebook/opt-{model_name}"
@@ -188,6 +190,7 @@ def main():
     args = parser.parse_args()
 
     model_name = args.model or config.get("ppl_model") or config.get("model")
+    model_path = config.get("model_path")
     dataset_name = args.dataset_name or config.get("ppl_dataset_name")
     dataset_names = args.dataset_names or config.get("ppl_dataset_names")
     dataset_path = Path(args.dataset_path or config.get("dataset_path", "datasets"))
@@ -197,8 +200,8 @@ def main():
     max_length = args.max_length or config.get("ppl_max_length")
     true_false = args.true_false if args.true_false is not None else config.get("true_false", False)
     remove_period = args.remove_period if args.remove_period is not None else config.get("remove_period", False)
-    torch_dtype = parse_torch_dtype(args.dtype)
-    device_map = args.device_map
+    torch_dtype = parse_torch_dtype(args.dtype or config.get("dtype"))
+    device_map = args.device_map or config.get("device_map")
 
     if dataset_names is None:
         if dataset_name is None:
@@ -207,9 +210,10 @@ def main():
     if model_name is None:
         raise ValueError("Provide --model or set 'ppl_model' or 'model' in config.json.")
 
-    model_id = resolve_model_id(model_name)
+    model_id = resolve_model_id(model_name, model_path)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    print(f"Loading model from {model_id} ...")
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -218,6 +222,7 @@ def main():
     else:
         model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch_dtype).to(device)
     model.eval()
+    print(f"Model loaded. dtype={model.dtype}, device_map={getattr(model, 'hf_device_map', device)}")
 
     output_path.mkdir(parents=True, exist_ok=True)
 
