@@ -3,3 +3,5 @@
 /processed_datasets/*
 !/processed_datasets/*metrics.csv
 /model/
+/__pycache__
+run*
