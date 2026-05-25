@@ -1,30 +1,30 @@
 {
     "notes": {
-      "Model options": "'6.7b', '2.7b', '1.3b', '350m' for OPT, and '7B', '13B', '30B', and '65B' for LLaMA",
+      "Model options": "'6.7b', '2.7b', '1.3b', '350m' for OPT, '7B'/'13B'/'30B'/'65B' for LLaMA, 'Qwen2-1.5B' for Qwen2",
       "true_false": "true if you want to add '_true_false' as suffix to dataset names for training",
-      "paper_layers": "SAPLMA paper tests layers: last(32), 28th, 24th, 20th, middle/16th. Negative indices account for embedding layer at index 0: -1=32, -5=28, -9=24, -13=20, -17=16",
-      "paper_repeat": "SAPLMA paper uses 3 random restarts per training run"
+      "paper_layers": "SAPLMA paper tests layers: last(32), 28th, 24th, 20th, middle/16th for 32-layer models",
+      "paper_repeat": "SAPLMA paper uses 3 random restarts per training run",
+      "qwen2_layers": "Qwen2-1.5B has 28 layers. Every 4 layers from middle(14) to last(28): 14, 18, 22, 26, 28"
     },
-    "model": "7B",
-    "model_path": "/home/osadmin/llama2/Llama-2-7b-hf",
-    "model_alias": "llama2_7b",
+    "model": "Qwen2-1.5B",
+    "model_path": "/home/liushengwen/Probes/model",
+    "model_alias": "qwen2_1.5b",
     "remove_period": true,
     "test_first_only": false,
     "save_probes": true,
     "repeat_each": 3,
-    "epochs": 20,
+    "epochs": 5,
     "probes_dir": "probes",
-    "layers_to_use": [-1, -5, -9, -13, -17],
-    "layer": -17,
+    "layers_to_use": [14, 18, 22, 26, 28],
+    "layer": 14,
     "list_of_datasets": ["cities", "inventions", "elements", "animals", "companies", "facts"],
     "dataset_path": "datasets",
     "processed_dataset_path": "processed_datasets",
     "true_false": true,
     "batch_size": 8,
-    "dtype": "float32",
+    "dtype": "bfloat16",
     "device_map": "auto",
-    "gen_predictions_dataset": "embeddings_citiesllama2_7b_16_rmv_period",
-    "gen_predictions_layer": -17,
+    "gen_predictions_dataset": "embeddings_citiesqwen2_1.5b_14_rmv_period",
+    "gen_predictions_layer": 14,
     "suffix_list": ["cities_rp", "facts_rp"]
-  }
-  
+}
