@@ -7,3 +7,4 @@
 run*
 /model/
 .claude
+datasets/triviaqa
