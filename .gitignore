@@ -2,6 +2,9 @@
 /probes/
 /processed_datasets/*
 !/processed_datasets/*metrics.csv
+!/processed_datasets/*json
+!/processed_datasets/head_aucs.csv
+!/processed_datasets/*png
 /model/
 /__pycache__
 run*
