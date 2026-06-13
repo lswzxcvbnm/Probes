@@ -1,20 +1,24 @@
-# 基于注意力归因的直接 Logit 贡献 — 幻觉检测研究计划
+# 基于逐头分类器筛选与投票集成的幻觉检测研究计划
 
 ## 1. 研究背景与动机
 
-SAPLMA 方法通过提取隐藏层表征训练探针来检测幻觉，已在阶段二中验证了其有效性（Layer 18 平均 AUC 0.834）。然而，SAPLMA 将整个隐藏状态作为黑盒特征，并未揭示模型内部哪些组件对"知道答案是否正确"起到了关键作用。
+SAPLMA 方法通过提取隐藏层表征训练探针来检测幻觉，已在阶段二中验证了其有效性（Layer 18 平均 AUC 0.834）。然而，SAPLMA 将整个隐藏状态（1536 维）作为黑盒特征，并未揭示模型内部哪些组件对"知道答案是否正确"起到了关键作用，也无法解释幻觉检测的可归因性。
 
-本阶段的目标是**从注意力头层面解释幻觉检测的可归因性**：在 QA 生成任务上，计算每个注意力头对答案最后一个 token logit 的直接贡献，基于正确生成与幻觉生成样本的贡献模式差异筛选关键头，并为每个关键头训练独立的二分类器，通过投票机制进行幻觉检测。
+本阶段的目标是**从注意力头层面实现可解释的幻觉检测**：在 QA 生成任务上，为每个注意力头训练独立的二分类器，以该头的影响向量（influence vector）作为特征来判断生成答案是否正确。通过比较 336 个头分类器的判别性能（验证集 AUC），筛选出最具判别力的 Top-k 个注意力头，最终通过投票集成进行幻觉检测。
 
 ### 核心思想
 
 在 Transformer 的前向传播中，每个注意力头 $h$ 在残差流中添加一个增量向量：
 
 $$
-\Delta h = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right) \cdot V \cdot W_O
+\Delta_h = O_h W_O^h
 $$
 
-该向量经过 unembedding 矩阵 $W_U$ 投影后，直接影响下一个 token 的 logit 分布。在 QA 生成场景中，我们关注模型生成答案时的内部机制：为每个注意力头训练一个二分类器，以该头的影响向量作为特征来判断生成答案是否正确。通过比较各头分类器的判别性能（AUC），可以识别出对幻觉检测最具判别力的注意力头。
+其中 $O_h$ 为头 $h$ 的注意力输出，$W_O^h$ 为输出投影矩阵中对应头 $h$ 的切片。该向量 $\Delta_h \in \mathbb{R}^{d_{model}}$ 即为头 $h$ 的**影响向量**，直接参与构成最终的隐藏状态，进而通过 unembedding 矩阵影响下一个 token 的 logit 分布。
+
+**关键假设**：如果模型在生成答案时"知道"答案是否正确，那么这种"知识"应体现在特定注意力头的影响向量中——正确生成与幻觉生成时，这些头的影响向量应呈现可区分的模式。
+
+**方法**：为全部 336 个注意力头（28 层 × 12 头）各训练一个二分类器，以影响向量为特征，通过验证集 AUC 筛选 Top-k 头。筛选阶段的 336 个分类器仅用于头选择；评估阶段在选定头上重新训练探针，通过多数投票得到最终检测结果。与 SAPLMA 使用完整隐藏状态（1536 维）不同，本方法仅使用 5/336 个头的影响向量即可实现更优的检测性能，同时揭示了对幻觉检测最关键的注意力头位置。
 
 ## 2. 技术方案
 
@@ -105,28 +109,29 @@ $$
 
 ### 2.3 基于 Top-k 头的投票式幻觉检测
 
-在步骤 3 中已为全部 336 个头训练了二分类器并筛选出 Top-k 头。本节描述如何基于这 k 个头的分类器进行集成投票检测。
+步骤 3 中训练的 336 个分类器仅用于**筛选 Top-k 头**（按验证集 AUC 排序）。筛选完成后，在 `Qwen2_HeadProbe.py` 中为 Top-k 头**重新训练**探针用于最终评估和投票。这样做的原因是：筛选阶段的分类器使用 50 个 epoch 和 early stopping，而评估阶段的探针使用更少的 epoch（5 次）配合多次随机重启（3 次）和最优阈值选择，以获得更稳健的评估结果。
 
-#### 单头二分类器（已在步骤 3 训练）
+#### 单头探针重新训练
 
-在步骤 3 中，已为每个注意力头训练了独立的二分类器：
+在 `Qwen2_HeadProbe.py` 中，对 Top-k 头重新训练探针：
 
 1. **特征**：该头在答案最后一个 token 位置的影响向量 $\Delta_{h_j}[\text{ans\_last\_pos}] \in \mathbb{R}^{d_{model}}$（维度 = 1536）
 2. **标签**：生成答案的正确性标签（1=正确生成，0=幻觉生成）
-3. **分类器架构**：三层前馈网络探针
+3. **探针架构**：与步骤 3 相同的三层前馈网络
    - `Dense(256, relu) → Dense(128, relu) → Dense(64, relu) → Dense(1, sigmoid)`
    - 优化器：Adam，损失函数：binary cross-entropy
-4. **筛选依据**：按验证集 AUC 排序，选取 Top-5 头对应的分类器用于投票
+4. **训练策略**：StandardScaler 归一化 + 3 次随机重启（每次 5 个 epoch），选择训练集上准确率最高的模型
+5. **阈值选择**：通过 ROC 曲线在训练集上寻优阈值，使准确率最大化
 
 #### 投票机制
 
-对于每个测试样本，5 个独立分类器各自输出一个预测概率 $p_j \in [0, 1]$：
+对于每个测试样本，5 个独立探针各自输出一个预测概率 $p_j \in [0, 1]$：
 
 $$
-\text{vote}(\mathbf{p}) = \begin{cases} 1 \text{ (正确)} & \text{if } \sum_{j=1}^{5} \mathbb{1}[p_j > 0.5] \geq 3 \\ 0 \text{ (幻觉)} & \text{otherwise} \end{cases}
+\text{vote}(\mathbf{p}) = \begin{cases} 1 \text{ (正确)} & \text{if } \sum_{j=1}^{5} \mathbb{1}[p_j > \tau_j] \geq 3 \\ 0 \text{ (幻觉)} & \text{otherwise} \end{cases}
 $$
 
-即多数投票：超过半数的分类器判定为正确，则最终判定为正确；否则判定为幻觉。
+其中 $\tau_j$ 为第 $j$ 个探针在训练集上通过 ROC 曲线寻优的阈值（实际实现中使用各探针最优阈值的平均值 $\bar{\tau}$ 作为统一阈值）。即多数投票：超过半数的探针判定为正确，则最终判定为正确；否则判定为幻觉。
 
 > **投票的优势**：
 >
@@ -156,7 +161,7 @@ $$
 1. 用 Qwen2-1.5B 生成答案（与训练时一致的 Prompt 和解码策略）
 2. 自动标注答案正确性作为真实标签
 3. 提取 Top-k 头在答案最后一个 token 位置的影响向量
-4. 用 5 个已训练的单头二分类器分别预测
+4. 用重新训练的 k 个单头探针分别预测（每个探针输出概率，经最优阈值二值化）
 5. 通过多数投票得到最终预测
 6. 计算 **Accuracy、Precision、Recall、F1、AUC**
 
@@ -260,106 +265,124 @@ def compute_all_head_features(o_proj_inputs, answer_last_pos, model):
 
 ### 3.4 基于分类器性能的注意力头筛选
 
+实际实现将训练和筛选分为两个独立函数（`Qwen2_HeadsAttribution.py`）：
+
 ```python
-def select_heads_by_classifier_auc(features_train, labels_train, features_val, labels_val,
-                                    num_layers=28, num_heads=12, head_dim=128, top_k=5):
+def build_head_probe(input_dim=1536):
+    """构建三层前馈网络分类器。"""
+    model = Sequential([
+        Dense(256, activation='relu', input_shape=(input_dim,)),
+        Dense(128, activation='relu'),
+        Dense(64, activation='relu'),
+        Dense(1, activation='sigmoid'),
+    ])
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+    return model
+
+
+def train_head_classifiers(features_train, labels_train,
+                            num_layers=28, num_heads=12, epochs=50, batch_size=32):
     """
-    为每个注意力头训练二分类器，基于验证集 AUC 筛选 Top-k 头。
+    为每个注意力头训练二分类器。
 
     Args:
-        features_train: dict {(layer, head): np.array [N_train, d_model]} — 训练集特征
-        labels_train: np.array [N_train] — 训练集标签（1=正确，0=幻觉）
-        features_val: dict {(layer, head): np.array [N_val, d_model]} — 验证集特征
-        labels_val: np.array [N_val] — 验证集标签
+        features_train: dict {(layer, head): np.array [N_train, d_model]}
+        labels_train: np.array [N_train]
         num_layers: 层数
         num_heads: 每层头数
-        head_dim: 头维度
-        top_k: 选取的头数量
+        epochs: 最大训练 epoch 数（配合 early stopping）
+        batch_size: 训练 batch size
     Returns:
-        selected_heads: list of (layer, head) — 按 AUC 降序排列的 Top-k 头
-        head_aucs: dict {(layer, head): float} — 每个头的验证集 AUC
-        all_probes: dict {(layer, head): trained_model} — 所有头的已训练分类器
+        all_classifiers: dict {(layer, head): (model, scaler)}
     """
-    from sklearn.metrics import roc_auc_score
-
-    head_aucs = {}
-    all_probes = {}
+    all_classifiers = {}
 
     for layer in range(num_layers):
         for head in range(num_heads):
             key = (layer, head)
-            X_train = features_train[key]
-            X_val = features_val[key]
+            X = features_train[key]
 
-            # 标准化
             scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_val_scaled = scaler.transform(X_val)
+            X_scaled = scaler.fit_transform(X)
 
-            # 训练三层前馈网络分类器
-            model = build_probe(input_dim=X_train.shape[1])
-            model.fit(X_train_scaled, labels_train,
-                      validation_data=(X_val_scaled, labels_val),
-                      epochs=50, batch_size=32, verbose=0,
-                      callbacks=[EarlyStopping(patience=5, restore_best_weights=True)])
+            model = build_head_probe(input_dim=X.shape[1])
+            model.fit(X_scaled, labels_train,
+                      epochs=epochs, batch_size=batch_size, verbose=0,
+                      callbacks=[EarlyStopping(patience=5,
+                                               restore_best_weights=True)])
 
-            # 计算验证集 AUC
-            val_probs = model.predict(X_val_scaled, verbose=0).flatten()
-            auc = roc_auc_score(labels_val, val_probs)
+            all_classifiers[key] = (model, scaler)
 
-            head_aucs[key] = auc
-            all_probes[key] = (model, scaler)
+    return all_classifiers
 
-    # 按 AUC 降序排列，取 Top-k
+
+def select_heads_by_auc(all_classifiers, features_val, labels_val, top_k=5):
+    """
+    在验证集上评估每个头的分类器 AUC，筛选 Top-k 头。
+
+    Args:
+        all_classifiers: dict {(layer, head): (model, scaler)}
+        features_val: dict {(layer, head): np.array [N_val, d_model]}
+        labels_val: np.array [N_val]
+        top_k: 选取的头数量
+    Returns:
+        selected_heads: list of (layer, head) — 按 AUC 降序排列的 Top-k 头
+        head_aucs: dict {(layer, head): float} — 每个头的验证集 AUC
+    """
+    head_aucs = {}
+
+    for key, (model, scaler) in all_classifiers.items():
+        X_val_scaled = scaler.transform(features_val[key])
+        val_probs = model.predict(X_val_scaled, verbose=0).flatten()
+        auc = roc_auc_score(labels_val, val_probs)
+        head_aucs[key] = auc
+
     sorted_heads = sorted(head_aucs.keys(),
                           key=lambda k: head_aucs[k],
                           reverse=True)
     selected_heads = sorted_heads[:top_k]
 
-    return selected_heads, head_aucs, all_probes
-
-
-def build_probe(input_dim=1536):
-    """构建三层前馈网络探针。"""
-    from tensorflow import keras
-    model = keras.Sequential([
-        keras.layers.Dense(256, activation='relu', input_shape=(input_dim,)),
-        keras.layers.Dense(128, activation='relu'),
-        keras.layers.Dense(64, activation='relu'),
-        keras.layers.Dense(1, activation='sigmoid')
-    ])
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    return model
+    return selected_heads, head_aucs
 ```
 
+> **筛选阶段与评估阶段的区别**：上述 336 个分类器仅用于筛选 Top-k 头。筛选完成后，在 `Qwen2_HeadProbe.py` 中为 Top-k 头重新训练探针用于最终评估，训练策略不同（5 epoch × 3 次随机重启 + 最优阈值选择）。
+
 ### 3.5 投票式幻觉检测
+
+投票使用 `Qwen2_HeadProbe.py` 中重新训练的探针（非 HeadsAttribution 中的 336 个分类器）：
 
 ```python
 def voting_prediction(probes, features_dict, selected_heads, threshold=0.5):
     """
-    5 个单头分类器投票决策。
+    k 个单头探针投票决策。
 
     Args:
-        probes: dict {(layer, head): trained_keras_model}
-        features_dict: dict {(layer, head): np.array [N, d_model]}
+        probes: dict {head_key: trained_keras_model} — 重新训练的探针
+        features_dict: dict {head_key: np.array [N, d_model]} — 已归一化的特征
         selected_heads: list of (layer, head)
-        threshold: 单个分类器的判定阈值
+        threshold: 单个探针的判定阈值（通过 ROC 曲线在训练集上寻优）
     Returns:
         predictions: np.array [N] — 最终预测（1=正确，0=幻觉）
-        individual_preds: dict {(layer, head): np.array [N]} — 各分类器的预测
+        individual_preds: dict {head_key: np.array [N]} — 各探针的预测
     """
     individual_preds = {}
-    for head_key in selected_heads:
-        prob = probes[head_key].predict(features_dict[head_key], verbose=0).flatten()
-        individual_preds[head_key] = (prob > threshold).astype(int)
+    for layer, head in selected_heads:
+        key = f"L{layer}_H{head}"
+        if key in probes and key in features_dict:
+            prob = probes[key].predict(features_dict[key], verbose=0).flatten()
+            individual_preds[key] = (prob > threshold).astype(int)
 
     # 多数投票
-    pred_matrix = np.stack(list(individual_preds.values()), axis=0)  # [5, N]
+    pred_matrix = np.stack(list(individual_preds.values()), axis=0)  # [k, N]
     vote_count = pred_matrix.sum(axis=0)  # [N]
-    predictions = (vote_count >= 3).astype(int)  # 超过半数判定为正确
+    k = len(selected_heads)
+    majority = (k + 1) // 2  # e.g., 3 for k=5
+    predictions = (vote_count >= majority).astype(int)
 
     return predictions, individual_preds
 ```
+
+> **注意**：实际实现中，投票使用的阈值是各探针在训练集上通过 ROC 曲线寻优的阈值的平均值，而非固定的 0.5。
 
 ### 3.6 TriviaQA 数据处理与生成
 
@@ -408,7 +431,8 @@ def is_correct(generated_answer, ideal_answers):
 | `processed_datasets/triviaqa_set_c.csv`        | 测试集（~200 条，端到端评估）             |
 | `processed_datasets/head_aucs.csv`             | 336 个头的分类器验证集 AUC 排名           |
 | `processed_datasets/top5_heads.json`           | Top-5 头的 (layer, head) 索引及 AUC       |
-| `processed_datasets/head_classifiers/`         | Top-5 头的分类器模型 (.h5) 和 scaler      |
+| `processed_datasets/head_classifiers/`         | 336 个分类器中 Top-5 头的模型 (.h5) 和 scaler（用于筛选阶段） |
+| `processed_datasets/head_probes/`              | Top-5 头重新训练的探针模型 (.h5)（用于评估和投票） |
 | `processed_datasets/set_a_all_features.npz`    | 集合 A 中 Top-5 头的影响向量特征          |
 | `processed_datasets/set_b_selected_features.npz` | 集合 B 中 Top-5 头的影响向量特征        |
 | `processed_datasets/head_probe_metrics.csv`    | 每个头的探针评估指标 + 投票集成指标       |
@@ -442,6 +466,8 @@ def is_correct(generated_answer, ideal_answers):
 | 单头 L13_H6       | 0.685    | 0.607     | 0.659  | 0.632 | 0.733 |
 | **求和探针 (Top-5)** | **0.710** | **0.676** | **0.561** | **0.613** | **0.776** |
 | **投票集成 (Top-5)** | 0.685    | 0.620     | 0.598  | 0.609 | 0.762 |
+
+> **注**：投票集成使用 `Qwen2_HeadProbe.py` 中重新训练的探针（5 epoch × 3 次随机重启 + 最优阈值），而非 `Qwen2_HeadsAttribution.py` 中用于筛选头的 336 个分类器。
 
 **关键发现**：
 
