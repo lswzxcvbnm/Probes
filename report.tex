@@ -30,7 +30,7 @@
 \maketitle
 
 \begin{abstract}
-Large language models (LLMs) are prone to generating factually incorrect text---so-called \emph{hallucinations}---often accompanied by high confidence. We investigate hallucination detection methods that leverage the model's internal states without requiring external knowledge retrieval. Using Qwen2-1.5B (28-layer Transformer, 12 heads per layer, hidden size 1536), we conduct a systematic three-stage study. First, we establish baselines comparing perplexity (PPL) and SAPLMA (probe on hidden states), finding that SAPLMA achieves an average AUC of 0.834 versus 0.690 for PPL on a six-topic true/false dataset. Second, we analyze the roles of layer depth and token position, confirming that the middle-upper layers (especially Layer 18) and the last token position carry the richest discriminative signals. Third, we propose a novel per-head probe method: training independent binary classifiers on each of the 336 attention heads' influence vectors, selecting the top-5 heads by validation AUC, and combining them via a voting ensemble. On a TriviaQA-based test set (203 samples), the summed-heads probe achieves AUC 0.776, surpassing the full SAPLMA baseline (AUC 0.723) with only 5 of 336 heads. The most discriminative heads cluster in layers 13--16, consistent with SAPLMA's optimal layer range. Our results demonstrate that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection.
+Large language models (LLMs) are prone to generating factually incorrect text---so-called \emph{hallucinations}---often accompanied by high confidence. We investigate hallucination detection methods that leverage the model's internal states without requiring external knowledge retrieval. Using Qwen2-1.5B (28-layer Transformer, 12 heads per layer, hidden size 1536), we conduct a systematic three-stage study. First, we establish baselines comparing perplexity (PPL) and SAPLMA (probe on hidden states), finding that SAPLMA achieves an average AUC of 0.834 versus 0.690 for PPL on a six-topic true/false dataset. Second, we analyze the roles of layer depth and token position, confirming that the middle-upper layers (especially Layer 18) and the last token position carry the richest discriminative signals. Third, we propose a novel per-head probe method: training independent binary classifiers on each of the 336 attention heads' influence vectors, selecting the top-5 heads by validation AUC, and combining them via a voting ensemble. On a TriviaQA-based test set (200 samples), the summed-heads probe achieves AUC 0.799, surpassing the full SAPLMA baseline (AUC 0.765) with only 5 of 336 heads. The most discriminative heads cluster in layers 11--18, consistent with SAPLMA's optimal layer range. Our results demonstrate that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection.
 \end{abstract}
 
 \section{Introduction}
@@ -44,7 +44,7 @@ In this work, we conduct a systematic investigation of intrinsic hallucination d
 \begin{enumerate}
     \item \textbf{Baseline Comparison} (Section~\ref{sec:baseline}): We reproduce and compare two established methods---perplexity-based detection (PPL) and SAPLMA \citep{azaria2023internal}---on a six-topic true/false dataset, establishing that SAPLMA (average AUC 0.834) significantly outperforms PPL (average AUC 0.690).
     \item \textbf{Representation Analysis} (Section~\ref{sec:analysis}): We investigate how layer depth and token position affect detection quality, confirming an inverted-U performance curve peaking at Layer 18 and demonstrating that the last token position is critical for detection.
-    \item \textbf{Per-Head Probe Method} (Section~\ref{sec:headprobe}): We propose a novel approach that trains independent binary classifiers on individual attention heads' influence vectors, selects the top-5 most discriminative heads by validation AUC, and combines them via a voting ensemble. This method achieves AUC 0.776 on a TriviaQA test set using only 5 of 336 heads, surpassing the full SAPLMA baseline.
+    \item \textbf{Per-Head Probe Method} (Section~\ref{sec:headprobe}): We propose a novel approach that trains independent binary classifiers on individual attention heads' influence vectors, selects the top-5 most discriminative heads by validation AUC, and combines them via a voting ensemble. This method achieves AUC 0.799 on a TriviaQA test set using only 5 of 336 heads, surpassing the full SAPLMA baseline.
 \end{enumerate}
 
 Our key contribution is demonstrating that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection, while revealing which specific attention heads are most responsible for encoding the model's ``knowledge'' of factual correctness.
@@ -129,7 +129,7 @@ For each of the 336 attention heads, we train an independent binary classifier (
 
 \subsubsection{Voting Ensemble}
 
-On the test set (Set C, 203 samples), we evaluate multiple fusion strategies:
+On the test set (Set C, 200 samples), we evaluate multiple fusion strategies:
 
 \begin{itemize}
     \item \textbf{Single-Head Probe}: Each of the top-5 heads independently classifies via its own probe.
@@ -236,7 +236,7 @@ Second-to-Last  & 0.603 & 0.668 \\
 
 \subsubsection{Head Selection}
 
-We trained 336 independent binary classifiers (one per attention head) on Set A and evaluated their AUC on Set B. Figure~\ref{fig:head_heatmap} shows the AUC distribution across all heads. High-performing heads concentrate in layers 12--18, with the top head (L15\_H6) achieving AUC 0.782.
+We trained 336 independent binary classifiers (one per attention head) on Set A and evaluated their AUC on Set B. Figure~\ref{fig:head_heatmap} shows the AUC distribution across all heads. High-performing heads concentrate in layers 11--18, with the top head (L16\_H6) achieving AUC 0.731.
 
 \begin{figure}[t]
     \centering
@@ -245,7 +245,7 @@ We trained 336 independent binary classifiers (one per attention head) on Set A 
     \label{fig:head_heatmap}
 \end{figure}
 
-The selected top-5 heads are listed in Table~\ref{tab:top5_heads}. All five heads are located in layers 13--16, consistent with SAPLMA's optimal layer range (Layer 18).
+The selected top-5 heads are listed in Table~\ref{tab:top5_heads}. All five heads are located in layers 11--18, consistent with SAPLMA's optimal layer range (Layer 18).
 
 \begin{table}[t]
 \centering
@@ -253,20 +253,20 @@ The selected top-5 heads are listed in Table~\ref{tab:top5_heads}. All five head
 \toprule
 \textbf{Rank} & \textbf{Head} & \textbf{Layer} & \textbf{Val. AUC} \\
 \midrule
-1 & L15\_H6  & 15 & 0.782 \\
-2 & L13\_H11 & 13 & 0.779 \\
-3 & L15\_H9  & 15 & 0.778 \\
-4 & L16\_H8  & 16 & 0.773 \\
-5 & L13\_H6  & 13 & 0.761 \\
+1 & L16\_H6  & 16 & 0.731 \\
+2 & L15\_H6  & 15 & 0.729 \\
+3 & L11\_H1  & 11 & 0.719 \\
+4 & L18\_H0  & 18 & 0.718 \\
+5 & L13\_H11 & 13 & 0.717 \\
 \bottomrule
 \end{tabular}
-\caption{Top-5 attention heads selected by validation AUC. All heads are in layers 13--16.}
+\caption{Top-5 attention heads selected by validation AUC. All heads are in layers 11--18.}
 \label{tab:top5_heads}
 \end{table}
 
 \subsubsection{End-to-End Evaluation}
 
-Table~\ref{tab:end_to_end} compares all methods on the TriviaQA test set (203 samples). Figure~\ref{fig:method_comparison} visualizes the results.
+Table~\ref{tab:end_to_end} compares all methods on the TriviaQA test set (200 samples). Figure~\ref{fig:method_comparison} visualizes the results.
 
 \begin{table}[t]
 \centering
@@ -275,20 +275,20 @@ Table~\ref{tab:end_to_end} compares all methods on the TriviaQA test set (203 sa
 \toprule
 \textbf{Method} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} & \textbf{AUC} \\
 \midrule
-PPL              & .625 & .889 & .098 & .176 & .539 \\
-SAPLMA-L18       & .680 & .667 & .439 & .529 & .723 \\
+PPL              & .615 & .593 & .368 & .454 & .603 \\
+SAPLMA-L18       & .700 & .667 & .621 & .643 & .765 \\
 \midrule
-Single L15\_H6   & .675 & .579 & .756 & .656 & .755 \\
-Single L13\_H11  & .660 & .613 & .463 & .528 & .708 \\
-Single L15\_H9   & .680 & .598 & .671 & .632 & .741 \\
-Single L16\_H8   & .645 & .590 & .439 & .503 & .704 \\
-Single L13\_H6   & .685 & .607 & .659 & .632 & .733 \\
+Single L16\_H6   & .710 & .688 & .609 & .646 & .754 \\
+Single L15\_H6   & .690 & .640 & .655 & .648 & .739 \\
+Single L11\_H1   & .720 & .707 & .609 & .654 & .746 \\
+Single L18\_H0   & .635 & .567 & .678 & .618 & .717 \\
+Single L13\_H11  & .685 & .662 & .563 & .609 & .763 \\
 \midrule
-Summed-Heads     & \textbf{.710} & \textbf{.676} & .561 & .613 & \textbf{.776} \\
-Voting Ensemble  & .685 & .620 & .598 & .609 & .762 \\
+Summed-Heads     & \textbf{.735} & .681 & \textbf{.736} & \textbf{.707} & \textbf{.799} \\
+Voting Ensemble  & .725 & \textbf{.722} & .598 & .654 & .795 \\
 \bottomrule
 \end{tabular}
-\caption{End-to-end hallucination detection on the TriviaQA test set (N=203). The Summed-Heads probe achieves the best AUC (0.776) and Accuracy (0.710).}
+\caption{End-to-end hallucination detection on the TriviaQA test set (N=200). The Summed-Heads probe achieves the best AUC (0.799) and Accuracy (0.735).}
 \label{tab:end_to_end}
 \end{table}
 
@@ -301,10 +301,10 @@ Voting Ensemble  & .685 & .620 & .598 & .609 & .762 \\
 
 Key observations:
 \begin{itemize}
-    \item The \textbf{Summed-Heads probe} (AUC 0.776) surpasses SAPLMA (AUC 0.723) using only 5 of 336 heads' influence vectors, demonstrating that head-level features can be more discriminative than the full hidden state.
-    \item \textbf{Feature-level fusion} (Summed-Heads, AUC 0.776) slightly outperforms \textbf{decision-level fusion} (Voting, AUC 0.762), suggesting the head signals are complementary at the feature level.
-    \item \textbf{PPL} has near-zero recall (0.098), meaning it almost never correctly identifies hallucinations, despite high precision (0.889). This reflects a strong bias toward predicting ``correct'' for all inputs.
-    \item Among single-head probes, \textbf{L15\_H6} achieves the highest recall (0.756) and AUC (0.755), already exceeding the full SAPLMA baseline.
+    \item The \textbf{Summed-Heads probe} (AUC 0.799) surpasses SAPLMA (AUC 0.765) using only 5 of 336 heads' influence vectors, demonstrating that head-level features can be more discriminative than the full hidden state.
+    \item \textbf{Feature-level fusion} (Summed-Heads, AUC 0.799) slightly outperforms \textbf{decision-level fusion} (Voting, AUC 0.795), suggesting the head signals are complementary at the feature level.
+    \item \textbf{PPL} continues to show weak recall (0.368), struggling to detect hallucinated outputs, though its precision of 0.593 indicates moderate reliability on positive predictions.
+    \item Among single-head probes, \textbf{L11\_H1} achieves the highest accuracy (0.720) while \textbf{L13\_H11} achieves the highest single-head AUC (0.763), approaching the full SAPLMA baseline.
 \end{itemize}
 
 \section{Analysis and Discussion}
@@ -330,11 +330,11 @@ The last token's hidden state (AUC 0.835) vastly outperforms earlier positions (
 
 \subsection{Head-Level Interpretability}
 
-The concentration of high-performing heads in layers 13--16 (Figure~\ref{fig:head_heatmap}) provides interpretable evidence that hallucination-relevant information is localized in specific model components. This is consistent with findings on factual knowledge localization \citep{meng2022locating} and circuit analysis \citep{olah2020zoom}. The fact that only 5 of 336 heads suffice to surpass SAPLMA suggests that truth-discriminative signals are highly concentrated rather than uniformly distributed.
+The concentration of high-performing heads in layers 11--18 (Figure~\ref{fig:head_heatmap}) provides interpretable evidence that hallucination-relevant information is localized in specific model components. This is consistent with findings on factual knowledge localization \citep{meng2022locating} and circuit analysis \citep{olah2020zoom}. The fact that only 5 of 336 heads suffice to surpass SAPLMA suggests that truth-discriminative signals are highly concentrated rather than uniformly distributed.
 
 \subsection{Feature-Level vs Decision-Level Fusion}
 
-The slight advantage of Summed-Heads (AUC 0.776) over Voting (AUC 0.762) suggests that the top-5 heads capture complementary aspects of the truth/hallucination distinction, and that combining their signals at the feature level allows the probe to learn richer joint patterns than majority voting at the decision level.
+The slight advantage of Summed-Heads (AUC 0.799) over Voting (AUC 0.795) suggests that the top-5 heads capture complementary aspects of the truth/hallucination distinction, and that combining their signals at the feature level allows the probe to learn richer joint patterns than majority voting at the decision level.
 
 \section{Limitations}
 
@@ -347,8 +347,8 @@ We conducted a systematic three-stage study of hallucination detection using the
 \begin{enumerate}
     \item SAPLMA (AUC 0.834) significantly outperforms PPL (AUC 0.690), confirming that hidden states contain richer truth-discriminative information than output probabilities.
     \item The optimal detection layer is Layer 18 (64\% depth), not the final layer, and the last token position is critical for effective detection.
-    \item A novel per-head probe method, using only 5 of 336 attention heads' influence vectors, achieves AUC 0.776 on a TriviaQA test set---surpassing the full SAPLMA baseline (AUC 0.723) with 300$\times$ fewer features.
-    \item The most discriminative heads cluster in layers 13--16, providing interpretable evidence for the localization of hallucination-related signals in Transformer models.
+    \item A novel per-head probe method, using only 5 of 336 attention heads' influence vectors, achieves AUC 0.799 on a TriviaQA test set---surpassing the full SAPLMA baseline (AUC 0.765) with 300$\times$ fewer features.
+    \item The most discriminative heads cluster in layers 11--18, providing interpretable evidence for the localization of hallucination-related signals in Transformer models.
 \end{enumerate}
 
 These results demonstrate that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection, opening new directions for efficient and explainable detection systems.

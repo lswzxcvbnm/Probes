@@ -21,6 +21,7 @@ from pathlib import Path
 import json
 import argparse
 from tqdm import tqdm
+from sklearn.model_selection import train_test_split
 
 
 def load_config(config_path="config.json"):
@@ -64,7 +65,12 @@ def load_triviaqa_data(data_path: str):
 
 def split_datasets(results, n_a=500, n_b=300, n_c=200, seed=42):
     """
-    Split labeled results into three non-overlapping sets.
+    Split labeled results into three non-overlapping, label-stratified sets.
+
+    Stratification ensures that all three sets have the same hallucination
+    rate, eliminating label-distribution drift as a confounding factor when
+    comparing classifier AUC across sets.
+
     Set A: training set for 336 per-head binary classifiers.
     Set B: validation set for evaluating classifier AUC and selecting top-k heads.
     Set C: test set for end-to-end voting hallucination detection evaluation.
@@ -79,37 +85,49 @@ def split_datasets(results, n_a=500, n_b=300, n_c=200, seed=42):
     Returns:
         set_a, set_b, set_c: lists of result dicts
     """
-    rng = np.random.RandomState(seed)
+    labels = [r['label'] for r in results]
 
-    # Shuffle all results (no need to balance — classifiers handle imbalance)
-    all_results = list(results)
-    rng.shuffle(all_results)
+    # Step 1: hold out set C with stratified sampling
+    rest, set_c = train_test_split(
+        results, test_size=n_c, stratify=labels, random_state=seed
+    )
 
-    set_a = all_results[:n_a]
-    set_b = all_results[n_a:n_a + n_b]
-    set_c = all_results[n_a + n_b:n_a + n_b + n_c]
+    # Step 2: split remaining into set A and set B, also stratified
+    rest_labels = [r['label'] for r in rest]
+    set_a, set_b = train_test_split(
+        rest, test_size=n_b, stratify=rest_labels, random_state=seed
+    )
 
     correct_a = sum(1 for r in set_a if r['label'] == 1)
     correct_b = sum(1 for r in set_b if r['label'] == 1)
     correct_c = sum(1 for r in set_c if r['label'] == 1)
 
-    print(f"Split: Set A={len(set_a)} ({correct_a} correct), "
-          f"Set B={len(set_b)} ({correct_b} correct), "
-          f"Set C={len(set_c)} ({correct_c} correct)")
+    total = n_a + n_b + n_c
+    print(f"Split ({total} samples, stratified by label):")
+    print(f"  Set A (train): {len(set_a)} samples, {correct_a} correct "
+          f"({correct_a / len(set_a):.1%})")
+    print(f"  Set B (val):   {len(set_b)} samples, {correct_b} correct "
+          f"({correct_b / len(set_b):.1%})")
+    print(f"  Set C (test):  {len(set_c)} samples, {correct_c} correct "
+          f"({correct_c / len(set_c):.1%})")
     return set_a, set_b, set_c
 
 
 def is_correct(generated_answer: str, ideal_answers: list) -> bool:
     """
     Check if generated answer matches any ideal answer (fuzzy matching).
-    Uses substring matching after lowercasing and stripping.
+
+    Only checks whether the ground-truth answer is a substring of the generated
+    text (handles verbose correct answers).  Does NOT match the reverse direction
+    (short/trivial generation as substring of a long ground-truth) to avoid
+    false positives.
     """
     gen = generated_answer.strip().lower()
-    if not gen:
+    if not gen or len(gen) < 3:
         return False
     for gt in ideal_answers:
         gt_lower = gt.strip().lower()
-        if gt_lower in gen or gen in gt_lower:
+        if gt_lower in gen:
             return True
     return False
 
@@ -127,6 +145,8 @@ def generate_answer(model, tokenizer, messages: list, max_new_tokens: int = 50):
     Returns:
         generated_text: The generated answer string.
         input_length: Number of input tokens (for later position tracking).
+        generated_ids: List of generated token IDs (preserves token identity
+                       across the decode→encode roundtrip for attribution).
     """
     device = next(model.parameters()).device
 
@@ -152,7 +172,9 @@ def generate_answer(model, tokenizer, messages: list, max_new_tokens: int = 50):
     # Decode only the generated part (exclude input)
     generated_ids = output_ids[0, input_length:]
     generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
-    return generated_text.strip(), input_length
+    # Save token IDs to avoid decode→encode roundtrip inconsistency
+    generated_ids_list = generated_ids.cpu().tolist()
+    return generated_text.strip(), input_length, generated_ids_list
 
 
 def generate_and_label(model, tokenizer, samples: list,
@@ -172,7 +194,7 @@ def generate_and_label(model, tokenizer, samples: list,
         ideal = sample["ideal"]
 
         # Generate answer
-        generated_answer, input_length = generate_answer(
+        generated_answer, input_length, generated_ids = generate_answer(
             model, tokenizer, messages, max_new_tokens=max_new_tokens
         )
 
@@ -193,6 +215,7 @@ def generate_and_label(model, tokenizer, samples: list,
         results.append({
             "question": question,
             "generated_answer": generated_answer,
+            "generated_ids": json.dumps(generated_ids),  # token IDs for attribution
             "ideal": json.dumps(ideal),
             "label": int(label),  # 1=correct, 0=hallucination
             "input_length": input_length,
@@ -216,7 +239,7 @@ def run_generation(config_path="config.json",
                    data_path=None,
                    output_dir=None,
                    n_a=500, n_b=300, n_c=200,
-                   max_samples=2000,
+                   max_samples=1000,
                    max_new_tokens=50):
     """Run the full TriviaQA generation and labeling pipeline."""
     config = load_config(config_path)
@@ -289,8 +312,8 @@ if __name__ == "__main__":
                         help="Number of samples for set C (evaluation)")
     parser.add_argument("--max_new_tokens", type=int, default=50,
                         help="Max tokens to generate per answer")
-    parser.add_argument("--max_samples", type=int, default=2000,
-                        help="Max samples to load from dataset (default 2000, set 0 for all)")
+    parser.add_argument("--max_samples", type=int, default=1000,
+                        help="Max samples to load from dataset (default 1000, set 0 for all)")
     args = parser.parse_args()
 
     run_generation(

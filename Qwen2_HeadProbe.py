@@ -100,8 +100,10 @@ def extract_head_features(model, tokenizer, samples_df, selected_heads,
         handle = o_proj_module.register_forward_hook(make_hook(layer_idx))
         hook_handles.append(handle)
 
-    # Hook for full hidden state (post-layer output) at the target layer
-    target_layer = model.model.layers[hidden_layer]
+    # Hook for full hidden state (post-layer output) at the target layer.
+    # hidden_layer uses 1-based indexing (matching SAPLMA convention where
+    # layer=18 means hidden_states[18] = output of model.model.layers[17]).
+    target_layer = model.model.layers[hidden_layer - 1]
 
     def hidden_hook(module, input, output):
         # output[0]: hidden_states after this layer, shape [1, T, d_model]
@@ -117,6 +119,13 @@ def extract_head_features(model, tokenizer, samples_df, selected_heads,
     all_labels = []
     all_ppl = []
 
+    # Pre-compute W_O for layers referenced by selected_heads (avoids
+    # redundant .detach()/.float() casts across samples).
+    W_O_cache = {}
+    for layer in set(l for l, _ in selected_heads):
+        W_O = model.model.layers[layer].self_attn.o_proj.weight.detach()
+        W_O_cache[layer] = W_O.float()
+
     for idx in tqdm(range(len(samples_df)), desc="Extracting features"):
         row = samples_df.iloc[idx]
         question = row['question']
@@ -126,7 +135,7 @@ def extract_head_features(model, tokenizer, samples_df, selected_heads,
         if not generated_answer.strip():
             continue
 
-        # Build full text
+        # Build prompt token IDs
         messages = [
             {"role": "system",
              "content": "Follow the given examples and answer the question."},
@@ -138,10 +147,19 @@ def extract_head_features(model, tokenizer, samples_df, selected_heads,
         prompt_ids = tokenizer(prompt_text, return_tensors="pt")
         prompt_length = prompt_ids["input_ids"].shape[1]
 
-        full_text = prompt_text + generated_answer
-        full_inputs = tokenizer(full_text, return_tensors="pt")
-        input_ids = full_inputs["input_ids"].to(device)
-        total_length = input_ids.shape[1]
+        # Use saved generated token IDs when available (avoids decode→encode
+        # roundtrip inconsistency). Fall back to text-based tokenization for
+        # legacy data that lacks the 'generated_ids' column.
+        if 'generated_ids' in row.index and isinstance(row['generated_ids'], str):
+            generated_ids_list = json.loads(row['generated_ids'])
+            generated_ids = torch.tensor([generated_ids_list], dtype=torch.long, device=device)
+            input_ids = torch.cat([prompt_ids["input_ids"].to(device), generated_ids], dim=1)
+            total_length = input_ids.shape[1]
+        else:
+            full_text = prompt_text + generated_answer
+            full_inputs = tokenizer(full_text, return_tensors="pt")
+            input_ids = full_inputs["input_ids"].to(device)
+            total_length = input_ids.shape[1]
 
         answer_last_pos = total_length - 1
         if answer_last_pos < prompt_length:
@@ -176,13 +194,13 @@ def extract_head_features(model, tokenizer, samples_df, selected_heads,
                 continue
 
             attn_out = o_proj_inputs[layer]  # [1, T, num_heads * head_dim]
-            W_O = model.model.layers[layer].self_attn.o_proj.weight.detach()
+            W_O = W_O_cache[layer]
 
             head_out = attn_out[0, answer_last_pos,
                                 head * head_dim:(head + 1) * head_dim]
             W_O_h = W_O[:, head * head_dim:(head + 1) * head_dim]
             delta_h = torch.matmul(head_out.float(),
-                                   W_O_h.float().T).cpu().numpy()  # [d_model]
+                                   W_O_h.T).cpu().numpy()  # [d_model]
             all_features[key].append(delta_h)
 
         all_labels.append(label)
