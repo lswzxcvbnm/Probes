@@ -193,12 +193,12 @@ def run_saplma_experiment(config_path="config.json"):
     epochs = config.get("epochs", 5)
     batch_size = config.get("batch_size", 8)
 
-    # Qwen2-1.5B has 28 layers. Test every 4 layers from middle to last:
-    # middle=14, then 18, 22, 26, 28 (last)
+    # Qwen2-1.5B has 28 layers. Test every 2 layers from middle to last:
+    # middle=14, then 16, 18, 20, 22, 24, 26, 28 (last)
     num_layers = 28
     middle = num_layers // 2
-    layers_to_test = list(range(middle, num_layers, 4)) + [num_layers]
-    # Result: [14, 18, 22, 26, 28]
+    layers_to_test = list(range(middle, num_layers, 2)) + [num_layers]
+    # Result: [14, 16, 18, 20, 22, 24, 26, 28]
 
     print(f"SAPLMA Experiment with {model_alias}")
     print(f"Layers to test: {layers_to_test}")

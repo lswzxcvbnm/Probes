@@ -52,7 +52,7 @@ with open("processed_datasets/top5_heads.json") as f:
 output_dir = "processed_datasets"
 
 # ============================================================
-# Figure 1: PPL vs SAPLMA (Layer 18) — Accuracy & AUC by topic
+# Figure 1: PPL vs SAPLMA (Layer 16) — Accuracy & AUC by topic
 # ============================================================
 fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
 
@@ -60,10 +60,10 @@ ppl_topics = ppl_df["dataset"].str.replace("_true_false", "", regex=False)
 ppl_acc = ppl_df["accuracy"].values
 ppl_auc = ppl_df["auc"].values
 
-saplma_l18 = saplma_df[saplma_df["layer"] == 18].sort_values("test_topic")
-saplma_acc = saplma_l18["avg_accuracy"].values
-saplma_auc = saplma_l18["avg_auc"].values
-topics = [TOPIC_DISPLAY[t] for t in saplma_l18["test_topic"].values]
+saplma_l16 = saplma_df[saplma_df["layer"] == 16].sort_values("test_topic")
+saplma_acc = saplma_l16["avg_accuracy"].values
+saplma_auc = saplma_l16["avg_auc"].values
+topics = [TOPIC_DISPLAY[t] for t in saplma_l16["test_topic"].values]
 
 x = np.arange(len(topics))
 width = 0.35
@@ -74,7 +74,7 @@ for ax, metric_name, ppl_vals, saplma_vals in [
 ]:
     b1 = ax.bar(x - width/2, ppl_vals, width, label="PPL",
                 color=COLORS[0], edgecolor="white", linewidth=0.5)
-    b2 = ax.bar(x + width/2, saplma_vals, width, label="SAPLMA (L18)",
+    b2 = ax.bar(x + width/2, saplma_vals, width, label="SAPLMA (L16)",
                 color=COLORS[1], edgecolor="white", linewidth=0.5)
     ax.set_ylabel(metric_name)
     ax.set_title(f"{metric_name}")
@@ -163,7 +163,7 @@ for j, (pos, pos_d, col) in enumerate(zip(positions, pos_display, pos_colors)):
     offset = (j - 1.5) * width
     bars = ax.bar(x + offset, auc_vals, width, label=pos_d, color=col, edgecolor="white", linewidth=0.5)
 ax.set_ylabel("AUC")
-ax.set_title("AUC by Token Position (Layer 18)")
+ax.set_title("AUC by Token Position (Layer 16)")
 ax.set_xticks(x)
 ax.set_xticklabels(topics, rotation=30, ha="right")
 ax.legend(fontsize=8)
@@ -246,8 +246,8 @@ metrics_names = ['accuracy', 'precision', 'recall', 'f1', 'auc']
 metric_labels = ['Accuracy', 'Precision', 'Recall', 'F1', 'AUC']
 
 # Select key methods for comparison
-key_methods = ['PPL', 'SAPLMA-L18', 'Single-L15_H6', 'Summed-Heads', 'Voting-Ensemble']
-method_labels = ['PPL', 'SAPLMA\n(L18)', 'Single\nL15\_H6', 'Summed\nHeads', 'Voting\nEnsemble']
+key_methods = ['PPL', 'SAPLMA-L16', 'Single-L15_H6', 'Summed-Heads', 'Voting-Ensemble']
+method_labels = ['PPL', 'SAPLMA\n(L16)', 'Single\nL15\_H6', 'Summed\nHeads', 'Voting\nEnsemble']
 method_colors = [COLORS[0], COLORS[1], COLORS[4], COLORS[2], COLORS[3]]
 
 x = np.arange(len(metric_labels))

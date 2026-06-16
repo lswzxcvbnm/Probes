@@ -4,7 +4,7 @@
       "true_false": "true if you want to add '_true_false' as suffix to dataset names for training",
       "paper_layers": "SAPLMA paper tests layers: last(32), 28th, 24th, 20th, middle/16th for 32-layer models",
       "paper_repeat": "SAPLMA paper uses 3 random restarts per training run",
-      "qwen2_layers": "Qwen2-1.5B has 28 layers. Every 4 layers from middle(14) to last(28): 14, 18, 22, 26, 28"
+      "qwen2_layers": "Qwen2-1.5B has 28 layers. Every 2 layers from middle(14) to last(28): 14, 16, 18, 20, 22, 24, 26, 28"
     },
     "model": "Qwen2-1.5B",
     "model_path": "/home/liushengwen/Probes/model",
@@ -15,8 +15,8 @@
     "repeat_each": 3,
     "epochs": 5,
     "probes_dir": "probes",
-    "layers_to_use": [14, 18, 22, 26, 28],
-    "layer": 14,
+    "layers_to_use": [14, 16, 18, 20, 22, 24, 26, 28],
+    "layer": 16,
     "list_of_datasets": ["cities", "inventions", "elements", "animals", "companies", "facts"],
     "dataset_path": "datasets",
     "processed_dataset_path": "processed_datasets",

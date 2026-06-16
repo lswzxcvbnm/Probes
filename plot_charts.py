@@ -21,7 +21,7 @@ topic_display = {
 }
 
 # ============================================================
-# Figure 1: PPL vs SAPLMA (best layer=18) comparison
+# Figure 1: PPL vs SAPLMA (best layer=16) comparison
 # ============================================================
 fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
@@ -29,17 +29,17 @@ ppl_topics = ppl_df["dataset"].str.replace("_true_false", "", regex=False)
 ppl_acc = ppl_df["accuracy"].values
 ppl_auc = ppl_df["auc"].values
 
-saplma_l18 = saplma_df[saplma_df["layer"] == 18].sort_values("test_topic")
-saplma_acc = saplma_l18["avg_accuracy"].values
-saplma_auc = saplma_l18["avg_auc"].values
+saplma_l16 = saplma_df[saplma_df["layer"] == 16].sort_values("test_topic")
+saplma_acc = saplma_l16["avg_accuracy"].values
+saplma_auc = saplma_l16["avg_auc"].values
 
-topics = [topic_display[t] for t in saplma_l18["test_topic"].values]
+topics = [topic_display[t] for t in saplma_l16["test_topic"].values]
 x = np.arange(len(topics))
 width = 0.35
 
 ax = axes[0]
 bars1 = ax.bar(x - width / 2, ppl_acc, width, label="PPL", color="#4C72B0", edgecolor="white")
-bars2 = ax.bar(x + width / 2, saplma_acc, width, label="SAPLMA (L18)", color="#DD8452", edgecolor="white")
+bars2 = ax.bar(x + width / 2, saplma_acc, width, label="SAPLMA (L16)", color="#DD8452", edgecolor="white")
 ax.set_ylabel("Accuracy", fontsize=12)
 ax.set_title("Accuracy: PPL vs SAPLMA", fontsize=13, fontweight="bold")
 ax.set_xticks(x)
@@ -56,7 +56,7 @@ for bar in bars2:
 
 ax = axes[1]
 bars1 = ax.bar(x - width / 2, ppl_auc, width, label="PPL", color="#4C72B0", edgecolor="white")
-bars2 = ax.bar(x + width / 2, saplma_auc, width, label="SAPLMA (L18)", color="#DD8452", edgecolor="white")
+bars2 = ax.bar(x + width / 2, saplma_auc, width, label="SAPLMA (L16)", color="#DD8452", edgecolor="white")
 ax.set_ylabel("AUC", fontsize=12)
 ax.set_title("AUC: PPL vs SAPLMA", fontsize=13, fontweight="bold")
 ax.set_xticks(x)
@@ -138,7 +138,7 @@ for j, (pos, pos_d, col) in enumerate(zip(positions, pos_display, pos_colors)):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
                 f"{bar.get_height():.2f}", ha="center", va="bottom", fontsize=6.5, rotation=45)
 ax.set_ylabel("Accuracy", fontsize=12)
-ax.set_title("Accuracy by Token Position (Layer 18)", fontsize=13, fontweight="bold")
+ax.set_title("Accuracy by Token Position (Layer 16)", fontsize=13, fontweight="bold")
 ax.set_xticks(x)
 ax.set_xticklabels(topics, rotation=30, ha="right")
 ax.legend(fontsize=9)
@@ -156,7 +156,7 @@ for j, (pos, pos_d, col) in enumerate(zip(positions, pos_display, pos_colors)):
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
                 f"{bar.get_height():.2f}", ha="center", va="bottom", fontsize=6.5, rotation=45)
 ax.set_ylabel("AUC", fontsize=12)
-ax.set_title("AUC by Token Position (Layer 18)", fontsize=13, fontweight="bold")
+ax.set_title("AUC by Token Position (Layer 16)", fontsize=13, fontweight="bold")
 ax.set_xticks(x)
 ax.set_xticklabels(topics, rotation=30, ha="right")
 ax.legend(fontsize=9)
@@ -220,7 +220,7 @@ width = 0.35
 bars1 = ax.bar(x - width / 2, pos_avg["avg_acc"], width, label="Avg Accuracy", color="#4C72B0", edgecolor="white")
 bars2 = ax.bar(x + width / 2, pos_avg["avg_auc"], width, label="Avg AUC", color="#DD8452", edgecolor="white")
 ax.set_ylabel("Score", fontsize=12)
-ax.set_title("Token Position: Average Performance (Layer 18)", fontsize=13, fontweight="bold")
+ax.set_title("Token Position: Average Performance (Layer 16)", fontsize=13, fontweight="bold")
 ax.set_xticks(x)
 ax.set_xticklabels(pos_display, fontsize=11)
 ax.legend(fontsize=11)

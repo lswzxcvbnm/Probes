@@ -30,7 +30,7 @@
 \maketitle
 
 \begin{abstract}
-Large language models (LLMs) are prone to generating factually incorrect text---so-called \emph{hallucinations}---often accompanied by high confidence. We investigate hallucination detection methods that leverage the model's internal states without requiring external knowledge retrieval. Using Qwen2-1.5B (28-layer Transformer, 12 heads per layer, hidden size 1536), we conduct a systematic three-stage study. First, we establish baselines comparing perplexity (PPL) and SAPLMA (probe on hidden states), finding that SAPLMA achieves an average AUC of 0.834 versus 0.690 for PPL on a six-topic true/false dataset. Second, we analyze the roles of layer depth and token position, confirming that the middle-upper layers (especially Layer 18) and the last token position carry the richest discriminative signals. Third, we propose a novel per-head probe method: training independent binary classifiers on each of the 336 attention heads' influence vectors, selecting the top-5 heads by validation AUC, and combining them via a voting ensemble. On a TriviaQA-based test set (200 samples), the summed-heads probe achieves AUC 0.799, surpassing the full SAPLMA baseline (AUC 0.765) with only 5 of 336 heads. The most discriminative heads cluster in layers 11--18, consistent with SAPLMA's optimal layer range. Our results demonstrate that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection.
+Large language models (LLMs) are prone to generating factually incorrect text---so-called \emph{hallucinations}---often accompanied by high confidence. We investigate hallucination detection methods that leverage the model's internal states without requiring external knowledge retrieval. Using Qwen2-1.5B (28-layer Transformer, 12 heads per layer, hidden size 1536), we conduct a systematic three-stage study. First, we establish baselines comparing perplexity (PPL) and SAPLMA (probe on hidden states), finding that SAPLMA achieves an average AUC of 0.834 versus 0.690 for PPL on a six-topic true/false dataset. Second, we analyze the roles of layer depth and token position, confirming that the middle-upper layers (especially Layer 16) and the last token position carry the richest discriminative signals. Third, we propose a novel per-head probe method: training independent binary classifiers on each of the 336 attention heads' influence vectors, selecting the top-5 heads by validation AUC, and combining them via a voting ensemble. On a TriviaQA-based test set (200 samples), the voting ensemble achieves AUC 0.794 and the summed-heads probe achieves AUC 0.792, both surpassing the full SAPLMA baseline (AUC 0.767) with only 5 of 336 heads. The most discriminative heads cluster in layers 11--18, consistent with SAPLMA's optimal layer range (Layer 16). Our results demonstrate that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection.
 \end{abstract}
 
 \section{Introduction}
@@ -43,8 +43,8 @@ In this work, we conduct a systematic investigation of intrinsic hallucination d
 
 \begin{enumerate}
     \item \textbf{Baseline Comparison} (Section~\ref{sec:baseline}): We reproduce and compare two established methods---perplexity-based detection (PPL) and SAPLMA \citep{azaria2023internal}---on a six-topic true/false dataset, establishing that SAPLMA (average AUC 0.834) significantly outperforms PPL (average AUC 0.690).
-    \item \textbf{Representation Analysis} (Section~\ref{sec:analysis}): We investigate how layer depth and token position affect detection quality, confirming an inverted-U performance curve peaking at Layer 18 and demonstrating that the last token position is critical for detection.
-    \item \textbf{Per-Head Probe Method} (Section~\ref{sec:headprobe}): We propose a novel approach that trains independent binary classifiers on individual attention heads' influence vectors, selects the top-5 most discriminative heads by validation AUC, and combines them via a voting ensemble. This method achieves AUC 0.799 on a TriviaQA test set using only 5 of 336 heads, surpassing the full SAPLMA baseline.
+    \item \textbf{Representation Analysis} (Section~\ref{sec:analysis}): We investigate how layer depth and token position affect detection quality, confirming an inverted-U performance curve peaking at Layer 16 and demonstrating that the last token position is critical for detection.
+    \item \textbf{Per-Head Probe Method} (Section~\ref{sec:headprobe}): We propose a novel approach that trains independent binary classifiers on individual attention heads' influence vectors, selects the top-5 most discriminative heads by validation AUC, and combines them via a voting ensemble. This method achieves AUC 0.794 on a TriviaQA test set using only 5 of 336 heads, surpassing the full SAPLMA baseline.
 \end{enumerate}
 
 Our key contribution is demonstrating that interpretable, head-level probes can rival or exceed full-hidden-state methods for hallucination detection, while revealing which specific attention heads are most responsible for encoding the model's ``knowledge'' of factual correctness.
@@ -84,7 +84,7 @@ where $T$ is the sequence length. Higher NLL indicates the model considers the s
 
 \subsubsection{SAPLMA: Probe on Hidden States}
 
-SAPLMA \citep{azaria2023internal} extracts the last token's hidden state from intermediate layers and trains a supervised probe. We extract embeddings from layers 14, 18, 22, 26, and 28 (every 4 layers from the middle to the last layer) and train a three-layer feedforward probe:
+SAPLMA \citep{azaria2023internal} extracts the last token's hidden state from intermediate layers and trains a supervised probe. We extract embeddings from layers 14, 16, 18, 20, 22, 24, 26, and 28 (every 2 layers from the middle to the last layer) and train a three-layer feedforward probe:
 \begin{equation}
     \text{Probe}(h) = \sigma(W_3 \cdot \text{ReLU}(W_2 \cdot \text{ReLU}(W_1 \cdot h + b_1) + b_2) + b_3)
 \end{equation}
@@ -95,11 +95,11 @@ with layer dimensions 256$\to$128$\to$64$\to$1, ReLU activations, sigmoid output
 
 \subsubsection{Layer Depth Analysis}
 
-We evaluate SAPLMA probes at layers 14, 18, 22, 26, and 28 to characterize how detection quality varies with depth. This reveals the optimal layer for extracting truth-discriminative representations.
+We evaluate SAPLMA probes at layers 14, 16, 18, 20, 22, 24, 26, and 28 to characterize how detection quality varies with depth. This reveals the optimal layer for extracting truth-discriminative representations.
 
 \subsubsection{Token Position Analysis}
 
-At Layer 18 (the optimal layer), we compare probe performance using hidden states from four token positions:
+At Layer 16 (the optimal layer from Stage 1), we compare probe performance using hidden states from four token positions:
 \begin{itemize}
     \item \textbf{First} (position 0): The beginning of the statement.
     \item \textbf{Second} (position 1): The second token.
@@ -164,7 +164,7 @@ Facts        & 0.722 & 0.775 & 2.961 \\
 \label{tab:ppl_metrics}
 \end{table}
 
-Table~\ref{tab:saplma_layer} presents SAPLMA results across five layers. Layer 18 achieves the best average performance (Accuracy 0.739, AUC 0.834), while the final layer (28) performs worst (AUC 0.761), exhibiting an inverted-U pattern.
+Table~\ref{tab:saplma_layer} presents SAPLMA results across eight layers. Layer 16 achieves the best average performance (Accuracy 0.751, AUC 0.843), while the final layer (28) performs worst (AUC 0.756), exhibiting an inverted-U pattern.
 
 \begin{table}[t]
 \centering
@@ -172,16 +172,19 @@ Table~\ref{tab:saplma_layer} presents SAPLMA results across five layers. Layer 1
 \toprule
 \textbf{Layer} & \textbf{Cit.} & \textbf{Inv.} & \textbf{Ele.} & \textbf{Ani.} & \textbf{Com.} & \textbf{Fac.} \\
 \midrule
-14 & .919 & .853 & .733 & .773 & .908 & .804 \\
-18 & .912 & .863 & .698 & .765 & .913 & .853 \\
-22 & .903 & .775 & .774 & .775 & .878 & .834 \\
-26 & .864 & .786 & .768 & .705 & .823 & .816 \\
-28 & .838 & .743 & .750 & .698 & .742 & .798 \\
+14 & .925 & .851 & .737 & .773 & .911 & .806 \\
+16 & .909 & .864 & .710 & .787 & .924 & .861 \\
+18 & .912 & .864 & .694 & .754 & .913 & .851 \\
+20 & .933 & .859 & .749 & .758 & .897 & .844 \\
+22 & .887 & .769 & .760 & .769 & .875 & .837 \\
+24 & .867 & .782 & .763 & .723 & .850 & .827 \\
+26 & .844 & .761 & .740 & .717 & .808 & .801 \\
+28 & .816 & .742 & .751 & .699 & .742 & .788 \\
 \midrule
-\textbf{Avg} & .887 & .804 & .745 & .743 & .853 & .821 \\
+\textbf{Avg} & .887 & .811 & .738 & .748 & .865 & .827 \\
 \bottomrule
 \end{tabular}
-\caption{SAPLMA AUC by layer and topic. Layer 18 achieves the highest average AUC (0.834). Values shown are average AUC across 3 random restarts with leave-one-out cross-validation.}
+\caption{SAPLMA AUC by layer and topic. Layer 16 achieves the highest average AUC (0.843). Values shown are average AUC across 3 random restarts with leave-one-out cross-validation.}
 \label{tab:saplma_layer}
 \end{table}
 
@@ -190,23 +193,23 @@ Figure~\ref{fig:ppl_vs_saplma} visualizes the PPL vs SAPLMA comparison. SAPLMA o
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{processed_datasets/fig_report_1_ppl_vs_saplma.png}
-    \caption{PPL vs SAPLMA (Layer 18) comparison across six topics. SAPLMA consistently outperforms PPL in both Accuracy and AUC.}
+    \caption{PPL vs SAPLMA (Layer 16) comparison across six topics. SAPLMA consistently outperforms PPL in both Accuracy and AUC.}
     \label{fig:ppl_vs_saplma}
 \end{figure}
 
 \subsection{Stage 2: Layer Depth and Token Position}
 \label{sec:results_stage2}
 
-Figure~\ref{fig:layer_analysis} shows how SAPLMA performance varies with layer depth. The left panel confirms the inverted-U pattern, with Layer 18 (64\% depth) achieving the best average AUC. The right panel shows this pattern holds across most topics, though the exact peak varies slightly.
+Figure~\ref{fig:layer_analysis} shows how SAPLMA performance varies with layer depth. The left panel confirms the inverted-U pattern, with Layer 16 (57\% depth) achieving the best average AUC. The right panel shows this pattern holds across most topics, though the exact peak varies slightly.
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{processed_datasets/fig_report_2_layer_analysis.png}
-    \caption{Left: Average Accuracy and AUC across layers. Right: Per-topic AUC across layers. The inverted-U pattern peaks at Layer 18.}
+    \caption{Left: Average Accuracy and AUC across layers. Right: Per-topic AUC across layers. The inverted-U pattern peaks at Layer 16.}
     \label{fig:layer_analysis}
 \end{figure}
 
-Table~\ref{tab:token_position} and Figure~\ref{fig:token_position} present the token position analysis. The last token dramatically outperforms all other positions (AUC 0.835), while the first and second tokens are near random (AUC $\sim$0.50). The second-to-last token shows intermediate performance (AUC 0.668), suggesting a gradual accumulation of semantic information.
+Table~\ref{tab:token_position} and Figure~\ref{fig:token_position} present the token position analysis at Layer 16. The last token dramatically outperforms all other positions (AUC 0.844), while the first and second tokens are near random (AUC $\sim$0.50). The second-to-last token shows intermediate performance (AUC 0.690), suggesting a gradual accumulation of semantic information.
 
 \begin{table}[t]
 \centering
@@ -216,18 +219,18 @@ Table~\ref{tab:token_position} and Figure~\ref{fig:token_position} present the t
 \midrule
 First           & 0.504 & 0.500 \\
 Second          & 0.504 & 0.493 \\
-Second-to-Last  & 0.603 & 0.668 \\
-\textbf{Last}   & \textbf{0.741} & \textbf{0.835} \\
+Second-to-Last  & 0.621 & 0.690 \\
+\textbf{Last}   & \textbf{0.751} & \textbf{0.844} \\
 \bottomrule
 \end{tabular}
-\caption{Token position analysis at Layer 18. The last token achieves dramatically superior performance.}
+\caption{Token position analysis at Layer 16. The last token achieves dramatically superior performance.}
 \label{tab:token_position}
 \end{table}
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{processed_datasets/fig_report_3_token_position.png}
-    \caption{Left: Per-topic AUC by token position. Right: Average performance by position. The last token is critical for hallucination detection.}
+    \caption{Left: Per-topic AUC by token position at Layer 16. Right: Average performance by position. The last token is critical for hallucination detection.}
     \label{fig:token_position}
 \end{figure}
 
@@ -245,7 +248,7 @@ We trained 336 independent binary classifiers (one per attention head) on Set A 
     \label{fig:head_heatmap}
 \end{figure}
 
-The selected top-5 heads are listed in Table~\ref{tab:top5_heads}. All five heads are located in layers 11--18, consistent with SAPLMA's optimal layer range (Layer 18).
+The selected top-5 heads are listed in Table~\ref{tab:top5_heads}. All five heads are located in layers 11--18, consistent with SAPLMA's optimal layer range (Layer 16).
 
 \begin{table}[t]
 \centering
@@ -276,19 +279,19 @@ Table~\ref{tab:end_to_end} compares all methods on the TriviaQA test set (200 sa
 \textbf{Method} & \textbf{Acc.} & \textbf{Prec.} & \textbf{Rec.} & \textbf{F1} & \textbf{AUC} \\
 \midrule
 PPL              & .615 & .593 & .368 & .454 & .603 \\
-SAPLMA-L18       & .700 & .667 & .621 & .643 & .765 \\
+SAPLMA-L16       & .720 & .701 & .621 & .659 & .767 \\
 \midrule
-Single L16\_H6   & .710 & .688 & .609 & .646 & .754 \\
-Single L15\_H6   & .690 & .640 & .655 & .648 & .739 \\
-Single L11\_H1   & .720 & .707 & .609 & .654 & .746 \\
-Single L18\_H0   & .635 & .567 & .678 & .618 & .717 \\
-Single L13\_H11  & .685 & .662 & .563 & .609 & .763 \\
+Single L16\_H6   & .695 & .703 & .517 & .596 & .732 \\
+Single L15\_H6   & .690 & .651 & .621 & .635 & .741 \\
+Single L11\_H1   & .700 & .655 & .655 & .655 & .757 \\
+Single L18\_H0   & .655 & .661 & .425 & .517 & .716 \\
+Single L13\_H11  & .685 & .622 & .701 & .659 & .768 \\
 \midrule
-Summed-Heads     & \textbf{.735} & .681 & \textbf{.736} & \textbf{.707} & \textbf{.799} \\
-Voting Ensemble  & .725 & \textbf{.722} & .598 & .654 & .795 \\
+Summed-Heads     & .735 & .743 & .598 & .662 & .792 \\
+Voting Ensemble  & \textbf{.735} & \textbf{.736} & .609 & \textbf{.667} & \textbf{.794} \\
 \bottomrule
 \end{tabular}
-\caption{End-to-end hallucination detection on the TriviaQA test set (N=200). The Summed-Heads probe achieves the best AUC (0.799) and Accuracy (0.735).}
+\caption{End-to-end hallucination detection on the TriviaQA test set (N=200). The Voting Ensemble achieves the best AUC (0.794) and the Summed-Heads probe achieves the best Accuracy (0.735).}
 \label{tab:end_to_end}
 \end{table}
 
@@ -301,10 +304,10 @@ Voting Ensemble  & .725 & \textbf{.722} & .598 & .654 & .795 \\
 
 Key observations:
 \begin{itemize}
-    \item The \textbf{Summed-Heads probe} (AUC 0.799) surpasses SAPLMA (AUC 0.765) using only 5 of 336 heads' influence vectors, demonstrating that head-level features can be more discriminative than the full hidden state.
-    \item \textbf{Feature-level fusion} (Summed-Heads, AUC 0.799) slightly outperforms \textbf{decision-level fusion} (Voting, AUC 0.795), suggesting the head signals are complementary at the feature level.
+    \item Both \textbf{Summed-Heads} (AUC 0.792) and \textbf{Voting Ensemble} (AUC 0.794) surpass SAPLMA (AUC 0.767) using only 5 of 336 heads' influence vectors, demonstrating that head-level features can be more discriminative than the full hidden state.
+    \item \textbf{Decision-level fusion} (Voting, AUC 0.794) performs on par with \textbf{feature-level fusion} (Summed-Heads, AUC 0.792), suggesting the head signals are complementary and both fusion strategies are viable.
     \item \textbf{PPL} continues to show weak recall (0.368), struggling to detect hallucinated outputs, though its precision of 0.593 indicates moderate reliability on positive predictions.
-    \item Among single-head probes, \textbf{L11\_H1} achieves the highest accuracy (0.720) while \textbf{L13\_H11} achieves the highest single-head AUC (0.763), approaching the full SAPLMA baseline.
+    \item Among single-head probes, \textbf{L13\_H11} achieves the highest AUC (0.768), already matching the full SAPLMA baseline (0.767), while \textbf{L11\_H1} achieves the best balance (Acc 0.700, F1 0.655).
 \end{itemize}
 
 \section{Analysis and Discussion}
@@ -322,11 +325,11 @@ The performance gap between SAPLMA (AUC 0.834) and PPL (AUC 0.690) can be attrib
 
 \subsection{The Inverted-U Layer Pattern}
 
-The optimal layer for SAPLMA is Layer 18 (64\% depth), not the final layer. This inverted-U pattern is consistent with the SAPLMA paper's findings for other models. A plausible explanation is that middle-upper layers encode the most abstract and task-relevant representations, while later layers begin to transform these into output-oriented representations optimized for next-token prediction, potentially losing some discriminative information.
+The optimal layer for SAPLMA is Layer 16 (57\% depth), not the final layer. This inverted-U pattern peaks slightly earlier than the previously reported Layer 18, which may reflect the finer granularity of our 2-layer interval testing. A plausible explanation is that middle-upper layers encode the most abstract and task-relevant representations, while later layers begin to transform these into output-oriented representations optimized for next-token prediction, potentially losing some discriminative information.
 
 \subsection{Why the Last Token?}
 
-The last token's hidden state (AUC 0.835) vastly outperforms earlier positions (AUC $\sim$0.50 for first/second tokens). In autoregressive Transformers, each token's representation attends to all preceding tokens. The last token has ``seen'' the entire statement and thus aggregates the fullest semantic representation. Earlier tokens lack this global context.
+The last token's hidden state (AUC 0.844) vastly outperforms earlier positions (AUC $\sim$0.50 for first/second tokens). In autoregressive Transformers, each token's representation attends to all preceding tokens. The last token has ``seen'' the entire statement and thus aggregates the fullest semantic representation. Earlier tokens lack this global context.
 
 \subsection{Head-Level Interpretability}
 
@@ -334,7 +337,7 @@ The concentration of high-performing heads in layers 11--18 (Figure~\ref{fig:hea
 
 \subsection{Feature-Level vs Decision-Level Fusion}
 
-The slight advantage of Summed-Heads (AUC 0.799) over Voting (AUC 0.795) suggests that the top-5 heads capture complementary aspects of the truth/hallucination distinction, and that combining their signals at the feature level allows the probe to learn richer joint patterns than majority voting at the decision level.
+The comparable performance of Summed-Heads (AUC 0.792) and Voting (AUC 0.794) suggests that the top-5 heads capture complementary aspects of the truth/hallucination distinction, and that both feature-level and decision-level fusion are viable strategies for combining head-level signals.
 
 \section{Limitations}
 
@@ -345,9 +348,9 @@ Our study has several limitations. First, the true/false dataset uses a constrai
 We conducted a systematic three-stage study of hallucination detection using the internal states of Qwen2-1.5B. Our key findings are:
 
 \begin{enumerate}
-    \item SAPLMA (AUC 0.834) significantly outperforms PPL (AUC 0.690), confirming that hidden states contain richer truth-discriminative information than output probabilities.
-    \item The optimal detection layer is Layer 18 (64\% depth), not the final layer, and the last token position is critical for effective detection.
-    \item A novel per-head probe method, using only 5 of 336 attention heads' influence vectors, achieves AUC 0.799 on a TriviaQA test set---surpassing the full SAPLMA baseline (AUC 0.765) with 300$\times$ fewer features.
+    \item SAPLMA (AUC 0.843) significantly outperforms PPL (AUC 0.690), confirming that hidden states contain richer truth-discriminative information than output probabilities.
+    \item The optimal detection layer is Layer 16 (57\% depth), not the final layer, and the last token position is critical for effective detection (AUC 0.844 at Layer 16).
+    \item A novel per-head probe method, using only 5 of 336 attention heads' influence vectors, achieves AUC 0.794 on a TriviaQA test set---surpassing the full SAPLMA baseline (AUC 0.767) with 300$\times$ fewer features.
     \item The most discriminative heads cluster in layers 11--18, providing interpretable evidence for the localization of hallucination-related signals in Transformer models.
 \end{enumerate}
 

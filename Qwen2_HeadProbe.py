@@ -12,7 +12,7 @@ add SAPLMA / summed-heads baselines.
 
 Baselines:
   - PPL: negative log-likelihood as hallucination score
-  - SAPLMA: hidden state probe (full hidden state at layer 18)
+  - SAPLMA: hidden state probe (full hidden state at layer 16)
   - Single-head probes: individual head performance
   - Summed-heads: sum of all selected heads' influence vectors
   - Voting ensemble: majority vote across top-k heads
@@ -66,7 +66,7 @@ def init_model(model_path: str, dtype=torch.bfloat16, device_map="auto"):
 
 
 def extract_head_features(model, tokenizer, samples_df, selected_heads,
-                          hidden_layer=18, batch_size=4):
+                          hidden_layer=16, batch_size=4):
     """
     Extract influence vector features at answer last token position
     for the selected attention heads, AND the full hidden state at a
@@ -102,7 +102,7 @@ def extract_head_features(model, tokenizer, samples_df, selected_heads,
 
     # Hook for full hidden state (post-layer output) at the target layer.
     # hidden_layer uses 1-based indexing (matching SAPLMA convention where
-    # layer=18 means hidden_states[18] = output of model.model.layers[17]).
+    # layer=16 means hidden_states[16] = output of model.model.layers[15]).
     target_layer = model.model.layers[hidden_layer - 1]
 
     def hidden_hook(module, input, output):
@@ -400,7 +400,7 @@ def run_probe_experiment(config_path="config.json",
                          repeat_each=3,
                          epochs=5,
                          batch_size=4,
-                         hidden_layer=18):
+                         hidden_layer=16):
     """Run the full head probe training and voting evaluation pipeline."""
     config = load_config(config_path)
 
@@ -521,8 +521,8 @@ def run_probe_experiment(config_path="config.json",
     test_hidden_scaled = saplma_scaler.transform(test_hidden)
     saplma_metrics = evaluate_probe(saplma_probe, test_hidden_scaled,
                                      test_labels, threshold=saplma_avg_thr)
-    all_metrics['SAPLMA-L18'] = saplma_metrics
-    print(f"\nSAPLMA Baseline (L18 hidden state):")
+    all_metrics['SAPLMA-L16'] = saplma_metrics
+    print(f"\nSAPLMA Baseline (L16 hidden state):")
     print(f"  Acc={saplma_metrics['accuracy']:.4f}, AUC={saplma_metrics['auc']:.4f}, "
           f"F1={saplma_metrics['f1']:.4f}")
 
@@ -612,7 +612,7 @@ def run_probe_experiment(config_path="config.json",
     probes_dir.mkdir(exist_ok=True)
     for key, probe in probes.items():
         probe.save(probes_dir / f"{key}_probe.h5")
-    saplma_probe.save(probes_dir / "SAPLMA_L18_probe.h5")
+    saplma_probe.save(probes_dir / "SAPLMA_L16_probe.h5")
     summed_probe.save(probes_dir / "Summed_Heads_probe.h5")
     print(f"Probes saved to {probes_dir}")
 
@@ -649,8 +649,8 @@ if __name__ == "__main__":
                         help="Training epochs per probe")
     parser.add_argument("--batch_size", type=int, default=4,
                         help="Batch size for feature extraction")
-    parser.add_argument("--hidden_layer", type=int, default=18,
-                        help="Layer for SAPLMA baseline hidden state (default 18)")
+    parser.add_argument("--hidden_layer", type=int, default=16,
+                        help="Layer for SAPLMA baseline hidden state (default 16)")
     args = parser.parse_args()
 
     run_probe_experiment(

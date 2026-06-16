@@ -1,8 +1,8 @@
 """
-Token Position Experiment with Qwen2-1.5B Layer 18
+Token Position Experiment with Qwen2-1.5B Layer 16
 
 Explores how different token positions affect SAPLMA probe performance.
-Uses Qwen2-1.5B layer 18, extracting embeddings from:
+Uses Qwen2-1.5B layer 16 (best layer from Stage 1), extracting embeddings from:
   - Position 0 (first token)
   - Position 1 (second token)
   - Position -2 (second to last token)
@@ -172,7 +172,7 @@ def run_position_experiment(config_path="config.json"):
     epochs = config.get("epochs", 5)
     batch_size = config.get("batch_size", 8)
 
-    LAYER = 18
+    LAYER = 16  # Best layer from Stage 1
     positions = [0, 1, -2, -1]
 
     print(f"Token Position Experiment — {model_alias}, Layer {LAYER}")
